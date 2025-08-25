@@ -1170,6 +1170,14 @@ typedef struct BbCtrlParams {
 	int gc_thres_pcent_high;
 } BbCtrlParams;
 
+// kyhooon
+typedef struct FdpCtrlParams {
+	int nr_ru;		// Number of Reclaim Unit
+	int nr_rg;		// Number of Reclaim Group
+	int nr_ruh;		// Number of Reclaim Unit Handle
+	int ruh_type;		// RUH type: (0 : Initially Isolated, 1: Persistently Isolated)
+} FdpCtrlParams;
+
 typedef struct ZNSCtrlParams {
 	uint8_t  zns_num_ch;
 	uint8_t  zns_num_lun;
@@ -1343,6 +1351,9 @@ typedef struct FemuCtrl {
 	int64_t chnl_pg_xfer_lat_ns;
 
 	BbCtrlParams bb_params;
+
+	// FIXME FDP params 
+	FdpCtrlParams fdp_params;
 
 	struct ssd      *ssd;
 	SsdDramBackend  *mbe;

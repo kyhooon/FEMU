@@ -683,6 +683,13 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("ch_xfer_lat", FemuCtrl, bb_params.ch_xfer_lat, 0),
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
+    // FIXME
+    // support for FDP-mode SSD
+    //  
+    // DEFINE_PROP_INT32("?", FemuCtrl, fdp_params.nr_ru, 8);
+    // DEFINE_PROP_INT32("?", FemuCtrl, fdp_params.nr_rg, 1);
+    // DEFINE_PROP_INT32("?", FemuCtrl, fdp_params.nr_ruh, 4);
+    // DEFINE_PROP_INT32("?", FemuCtrl, fdp_params.ruh_type, 0);
     DEFINE_PROP_END_OF_LIST(),
 };
 
