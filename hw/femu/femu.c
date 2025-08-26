@@ -683,13 +683,24 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("ch_xfer_lat", FemuCtrl, bb_params.ch_xfer_lat, 0),
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
-    // FIXME
-    // support for FDP-mode SSD
-    //  
-    // DEFINE_PROP_INT32("?", FemuCtrl, fdp_params.nr_ru, 8);
-    // DEFINE_PROP_INT32("?", FemuCtrl, fdp_params.nr_rg, 1);
-    // DEFINE_PROP_INT32("?", FemuCtrl, fdp_params.nr_ruh, 4);
-    // DEFINE_PROP_INT32("?", FemuCtrl, fdp_params.ruh_type, 0);
+    // FDP
+    DEFINE_PROP_INT32("fdp_secsz", FemuCtrl, fdp_params.secsz, 512),
+    DEFINE_PROP_INT32("fdp_secs_per_pg", FemuCtrl, fdp_params.secs_per_pg, 8),
+    DEFINE_PROP_INT32("fdp_pgs_per_blk", FemuCtrl, fdp_params.pgs_per_blk, 256),
+    DEFINE_PROP_INT32("fdp_blks_per_pl", FemuCtrl, fdp_params.blks_per_pl, 256),
+    DEFINE_PROP_INT32("fdp_pls_per_lun", FemuCtrl, fdp_params.pls_per_lun, 1),
+    DEFINE_PROP_INT32("fdp_luns_per_ch", FemuCtrl, fdp_params.luns_per_ch, 8),
+    DEFINE_PROP_INT32("fdp_nchs", FemuCtrl, fdp_params.nchs, 8),
+    DEFINE_PROP_INT32("fdp_pg_rd_lat", FemuCtrl, fdp_params.pg_rd_lat, 40000),
+    DEFINE_PROP_INT32("fdp_pg_wr_lat", FemuCtrl, fdp_params.pg_wr_lat, 200000),
+    DEFINE_PROP_INT32("fdp_blk_er_lat", FemuCtrl, fdp_params.blk_er_lat, 2000000),
+    DEFINE_PROP_INT32("fdp_ch_xfer_lat", FemuCtrl, fdp_params.ch_xfer_lat, 0),
+    DEFINE_PROP_INT32("fdp_gc_thres_pcent", FemuCtrl, fdp_params.gc_thres_pcent, 75),
+    DEFINE_PROP_INT32("fdp_gc_thres_pcent_high", FemuCtrl, fdp_params.gc_thres_pcent_high, 95),
+    DEFINE_PROP_INT32("fdp_ru", FemuCtrl, fdp_params.nr_ru, 8),
+    DEFINE_PROP_INT32("fdp_rg", FemuCtrl, fdp_params.nr_rg, 1),
+    DEFINE_PROP_INT32("fdp_ruh", FemuCtrl, fdp_params.nr_ruh, 4),
+    DEFINE_PROP_INT32("fdp_ruh_type", FemuCtrl, fdp_params.ruh_type, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 

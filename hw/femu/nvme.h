@@ -1172,6 +1172,22 @@ typedef struct BbCtrlParams {
 
 // kyhooon
 typedef struct FdpCtrlParams {
+	int secsz;
+	int secs_per_pg;
+	int pgs_per_blk;
+	int blks_per_pl;
+	int pls_per_lun;
+	int luns_per_ch;
+	int nchs;
+
+	int pg_rd_lat;
+	int pg_wr_lat;
+	int blk_er_lat;
+	int ch_xfer_lat;
+
+	int gc_thres_pcent;
+	int gc_thres_pcent_high;
+
 	int nr_ru;		// Number of Reclaim Unit
 	int nr_rg;		// Number of Reclaim Group
 	int nr_ruh;		// Number of Reclaim Unit Handle
