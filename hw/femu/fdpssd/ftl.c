@@ -1,5 +1,19 @@
 #include "ftl.h"
 
+// FIXME:
+static void ssd_init_lines(struct ssd *ssd) 
+{
+	// struct ssdparams *spp = &ssd->sp;
+	// struct rg *rgs = &ssd->rgs;
+	// struct line_mgmt *lm;
+	// struct line *line;
+	
+	// rgs = g_malloc0(sizeof(struct rg) * spp->nrg);
+	// for(i = 0; i < spp->nrg; i++) {
+	// }
+	return;
+}
+
 static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n) 
 {
 	spp->secsz = n->fdp_params.secsz; // 512
@@ -55,6 +69,56 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
 	return;
 }
 
+static void ssd_init_nand_page(struct nand_page *pg, struct ssdparams *spp) 
+{
+	pg->nsecs = spp->secs_per_pg;
+	pg->sec = g_malloc0(sizeof(nand_sec_status_t) * pg->nsecs);
+	for(int i = 0; i < pg->nsecs; i++) {
+		pg->sec[i] = SEC_FREE;
+	}
+	pg->status = PG_FREE;
+}
+
+static void ssd_init_nand_block(struct nand_block *blk, struct ssdparams *spp)
+{
+	blk->npgs = spp->pgs_per_blk;
+	blk->pg = g_malloc0(sizeof(struct nand_page) * blk->npgs);
+	for(int i = 0; i < blk->npgs; i++) {
+		ssd_init_nand_page(&blk->pg[i], spp);
+	}
+
+	blk->ipc = 0;
+	blk->vpc = 0;
+	blk->erase_cnt = 0;
+}
+
+static void ssd_init_nand_plane(struct nand_plane *pl, struct ssdparams *spp) 
+{
+	pl->nblks = spp->blks_per_pl;
+	pl->blk = g_malloc0(sizeof(struct nand_block) * pl->nblks);
+	for(int i = 0; i < pl->nblks; i++) {
+		ssd_init_nand_block(&pl->blk[i], spp);
+	}	
+}
+
+static void ssd_init_nand_lun(struct nand_lun *lun, struct ssdparams *spp)
+{
+	lun->npls = spp->pls_per_lun;
+	lun->pl = g_malloc0(sizeof(struct nand_plane) * lun->npls);
+	for(int i = 0; i < lun->npls; i++) {
+		ssd_init_nand_plane(&lun->pl[i], spp);
+	}
+}
+
+static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp) 
+{
+	ch->nluns = spp->luns_per_ch;
+	ch->lun = g_malloc0(sizeof(struct nand_lun) * ch->nluns);
+	for(int i = 0; i < ch->nluns; i++) {
+		ssd_init_nand_lun(&ch->lun[i], spp);
+	}
+}
+
 void fdp_ssd_init(FemuCtrl *n) 
 {
 	struct ssd *ssd = n->ssd;
@@ -64,6 +128,18 @@ void fdp_ssd_init(FemuCtrl *n)
 	// ftl_assert(ssd);
 
 	ssd_init_params(spp, n);
+
+	/* initialize ssd internal layout architecture */
+	ssd->ch = g_malloc0(sizeof(struct ssd_channel) * spp->nchs);
+	for(int i = 0; i < spp->nchs; i++) {
+		ssd_init_ch(&ssd->ch[i], spp);
+	}
+
+	/* initialize maptbl */
+	// ssd_init_maptbl(ssd);
+	
+	/* initialize all the lines */
+	ssd_init_lines(ssd);
 
 	// FIXME
 	// initalize all lines with RUH type

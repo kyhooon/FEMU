@@ -20,6 +20,42 @@ enum {
     PERSIST_ISOLATED = 1,
 };
 
+enum {
+    SEC_FREE = 0,
+    PG_FREE = 0
+};
+
+typedef int nand_sec_status_t;
+
+struct nand_page {
+    nand_sec_status_t *sec;    
+    int nsecs;
+    int status;
+};
+
+struct nand_block {
+    struct nand_page *pg;
+    int npgs;
+    int ipc; /* invalid page count */
+    int vpc; /* valid page count */
+    int erase_cnt;
+};
+
+struct nand_plane {
+    struct nand_block *blk;
+    int nblks;
+};
+
+struct nand_lun {
+    struct nand_plane *pl;
+    int npls;
+};
+
+struct ssd_channel {
+    struct nand_lun *lun;
+    int nluns;
+};
+
 struct ssdparams {
     int secsz;        /* sector size in bytes */
     int secs_per_pg;  /* # of sectors per page */
@@ -81,21 +117,43 @@ typedef struct line {
     int vpc;	// valid page count in this line 
 }line;
 
+// FIXME:
+struct line_mgmt {
+    struct line *lines;
+
+    QTAILQ_HEAD(free_line_list, line) free_line_list;
+    QTAILQ_HEAD(full_line_list, line) full_line_list;
+
+    int free_line_cnt;
+    int victim_line_cnt;
+    int full_line_cnt;
+};
+
+// FIXME: 
 struct reclaim_unit {
-    // FIXME: to be fix
     line *line;
 };
 
-struct reclaim_handle {
+// FIXME: RG
+typedef struct reclaim_group {
+    struct line_mgmt *lm;
+}rg;
+
+typedef struct reclaim_handle {
     // FIXME: to be fix
     struct reclaim_unit *unit;
     int type;
-};
+}ruh;
 
+// FIXME:
 struct ssd {
     struct ssdparams sp;
+    struct ssd_channel *ch;
     char *ssdname;
     bool *dataplane_started_ptr;
+
+    // reclaim groups
+    struct rg *rgs;
 };
 
 void fdp_ssd_init(FemuCtrl *n);
