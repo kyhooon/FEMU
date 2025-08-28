@@ -111,6 +111,16 @@ struct ssdparams {
     int ruh_type;       // 1) Initially Isolated, 2) Persistently Isolated
 };
 
+// FIXME: 
+struct write_pointer {
+    struct line *curline;
+    int ch;
+    int lun;
+    int pg;
+    int blk;
+    int pl;
+};
+
 typedef struct line {
     int id;	// block id
     int ipc;	// invalid page count in this line
@@ -121,9 +131,10 @@ typedef struct line {
 struct line_mgmt {
     struct line *lines;
 
-    QTAILQ_HEAD(free_line_list, line) free_line_list;
-    QTAILQ_HEAD(full_line_list, line) full_line_list;
+    // QTAILQ_HEAD(free_line_list, line) free_line_list;
+    // QTAILQ_HEAD(full_line_list, line) full_line_list;
 
+    int tt_lines;
     int free_line_cnt;
     int victim_line_cnt;
     int full_line_cnt;
@@ -131,29 +142,30 @@ struct line_mgmt {
 
 // FIXME: 
 struct reclaim_unit {
-    line *line;
 };
 
 // FIXME: RG
-typedef struct reclaim_group {
+struct reclaim_group {
     struct line_mgmt *lm;
-}rg;
+};
 
 typedef struct reclaim_handle {
     // FIXME: to be fix
-    struct reclaim_unit *unit;
+    struct write_pointer wp;
     int type;
 }ruh;
 
 // FIXME:
 struct ssd {
+    // reclaim group
+    struct reclaim_group *gps;
+
+    struct write_pointer wp;
+
     struct ssdparams sp;
     struct ssd_channel *ch;
     char *ssdname;
     bool *dataplane_started_ptr;
-
-    // reclaim groups
-    struct rg *rgs;
 };
 
 void fdp_ssd_init(FemuCtrl *n);

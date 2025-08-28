@@ -1,18 +1,38 @@
 #include "ftl.h"
 
 // FIXME:
-static void ssd_init_lines(struct ssd *ssd) 
+static void ssd_init_write_pointer(struct ssd *ssd)
 {
-	// struct ssdparams *spp = &ssd->sp;
-	// struct rg *rgs = &ssd->rgs;
-	// struct line_mgmt *lm;
-	// struct line *line;
-	
-	// rgs = g_malloc0(sizeof(struct rg) * spp->nrg);
-	// for(i = 0; i < spp->nrg; i++) {
-	// }
+	//struct write_pointer *wpp = &ssd->wp;
+	// struct line_mgmt *lm = &ssd->lm;
+	// 
 	return;
 }
+
+// FIXME:
+// static void ssd_init_lines(struct ssd *ssd) 
+// {
+	//struct ssdparams *spp = &ssd->sp;
+	//struct reclaim_group *gps = ssd->gps;
+	//struct line_mgmt lm;
+	//struct line *line;
+
+	//for(int i = 0; i < spp->nrg; i++) {
+		//lm = gps[i].lm;
+		//lm.lines = g_malloc0(sizeof(struct line) * spp->tt_lines);
+		//for(int j = 0; j < lm.tt_lines; j++) {
+		//	line = &lm.lines[j];
+		//	line->id = j;
+		//	line->ipc = 0;
+		//	line->vpc = 0;
+		//	lm.free_line_cnt++;
+		//}
+		//lm.victim_line_cnt = 0;
+		//lm.full_line_cnt = 0;
+	//}
+
+	//return;
+//}
 
 static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n) 
 {
@@ -134,12 +154,16 @@ void fdp_ssd_init(FemuCtrl *n)
 	for(int i = 0; i < spp->nchs; i++) {
 		ssd_init_ch(&ssd->ch[i], spp);
 	}
+	/* initialize all reclaim group */
+	ssd->gps = g_malloc0(sizeof(struct reclaim_group) * spp->nrg);
 
 	/* initialize maptbl */
 	// ssd_init_maptbl(ssd);
 	
 	/* initialize all the lines */
-	ssd_init_lines(ssd);
+	// ssd_init_lines(ssd);
+
+	ssd_init_write_pointer(ssd);
 
 	// FIXME
 	// initalize all lines with RUH type
