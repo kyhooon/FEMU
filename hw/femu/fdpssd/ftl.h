@@ -14,6 +14,30 @@ enum {
     NAND_ERASE_LATENCY = 2000000,
 };
 
+#define BLK_BITS    (16)
+#define PG_BITS     (16)
+#define SEC_BITS    (8)
+#define PL_BITS     (8)
+#define LUN_BITS    (8)
+#define CH_BITS     (7)
+
+/* describe a physical page addr */
+struct ppa {
+    union {
+        struct {
+            uint64_t blk : BLK_BITS;
+            uint64_t pg  : PG_BITS;
+            uint64_t sec : SEC_BITS;
+            uint64_t pl  : PL_BITS;
+            uint64_t lun : LUN_BITS;
+            uint64_t ch  : CH_BITS;
+            uint64_t rsv : 1;
+        } g;
+
+        uint64_t ppa;
+    };
+};
+
 // Reclaim Uint Handle Type
 enum {
     INIT_ISOLATED = 0,
@@ -147,25 +171,35 @@ struct reclaim_unit {
 // FIXME: RG
 struct reclaim_group {
     struct line_mgmt *lm;
+
+    // RG location  
+    int ch_id;
+    int lun_id;
+    
 };
 
-typedef struct reclaim_handle {
-    // FIXME: to be fix
+struct reclaim_unit_handle {
+    // FIXME:
     struct write_pointer wp;
     int type;
-}ruh;
+};
 
 // FIXME:
 struct ssd {
-    // reclaim group
-    struct reclaim_group *gps;
+    struct reclaim_group *gps; 		// reclaim group
+    struct reclaim_unit_handle *ruhs;   // reclaim unit handle
 
-    struct write_pointer wp;
+    /* serval pointer with all of reclaim group */
+    struct write_pointer *wp;
 
     struct ssdparams sp;
+    struct ppa *maptbl;	/* page level mapping table */
+    uint64_t *rmap;	/* reverse mapptbl, assume it's stored in OOB */
     struct ssd_channel *ch;
     char *ssdname;
     bool *dataplane_started_ptr;
+
+    QemuThread ftl_thread;
 };
 
 void fdp_ssd_init(FemuCtrl *n);

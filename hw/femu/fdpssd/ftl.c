@@ -1,38 +1,56 @@
 #include "ftl.h"
 
+static void *ftl_thread(void *arg);
+
 // FIXME:
 static void ssd_init_write_pointer(struct ssd *ssd)
 {
-	//struct write_pointer *wpp = &ssd->wp;
-	// struct line_mgmt *lm = &ssd->lm;
-	// 
-	return;
+	struct ssdparams *spp = &ssd->sp;
+	struct reclaim_unit_handle *ruh = NULL;
+	struct write_pointer *wp = NULL;
+	// struct line *curline = NULL;
+
+	/* initialize ruhs write pointer */
+	for(int i = 0; i < spp->nruh; i++) {
+		ruh = &ssd->ruhs[i];
+		wp = &ruh->wp;
+		// wp->curline = ;
+		wp->ch = 0;
+		wp->lun = 0;
+		wp->pg = 0;
+		wp->blk = 0;
+		wp->pl = 0;
+	}
 }
 
-// FIXME:
-// static void ssd_init_lines(struct ssd *ssd) 
-// {
-	//struct ssdparams *spp = &ssd->sp;
-	//struct reclaim_group *gps = ssd->gps;
-	//struct line_mgmt lm;
-	//struct line *line;
+// FIXME
+static void ssd_init_lines(struct ssd *ssd) 
+{
+	struct ssdparams *spp = &ssd->sp;
+	struct reclaim_group **gps = &ssd->gps;
+	struct line_mgmt *lm;
+	struct line *line;
 
-	//for(int i = 0; i < spp->nrg; i++) {
-		//lm = gps[i].lm;
-		//lm.lines = g_malloc0(sizeof(struct line) * spp->tt_lines);
-		//for(int j = 0; j < lm.tt_lines; j++) {
-		//	line = &lm.lines[j];
-		//	line->id = j;
-		//	line->ipc = 0;
-		//	line->vpc = 0;
-		//	lm.free_line_cnt++;
-		//}
-		//lm.victim_line_cnt = 0;
-		//lm.full_line_cnt = 0;
-	//}
+	// QTAILQ_INIT(&lm->free_line_list);
+	// QTAILQ_INIT(&lm->full_line_list);
+	// lm->victim_line_pq 
 
-	//return;
-//}
+	for(int i = 0; i < spp->nrg; i++) {
+		lm = gps[i]->lm;
+		lm->lines = g_malloc0(sizeof(struct line) * spp->tt_lines);
+		for(int j = 0; j < lm->tt_lines; j++) {
+			line = &lm->lines[j];
+			line->id = j;
+			line->ipc = 0;
+			line->vpc = 0;
+			lm->free_line_cnt++;
+		}
+		lm->victim_line_cnt = 0;
+		lm->full_line_cnt = 0;
+	}
+
+	return;
+}
 
 static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n) 
 {
@@ -139,10 +157,33 @@ static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp)
 	}
 }
 
+static void ssd_init_maptbl(struct ssd *ssd)
+{
+	struct ssdparams *spp = &ssd->sp;
+
+	ssd->maptbl = g_malloc0(sizeof(struct ppa) * spp->tt_pgs);
+
+	for(int i = 0; i < spp->tt_pgs; i++) {
+		ssd->maptbl[i].ppa = UNMAPPED_PPA;
+	}
+}
+
+static void ssd_init_rmap(struct ssd *ssd) 
+{
+	struct ssdparams *spp = &ssd->sp;
+
+	ssd->rmap = g_malloc0(sizeof(uint64_t) * spp->tt_pgs);
+	for(int i = 0; i < spp->tt_pgs; i++) {
+		ssd->rmap[i] = INVALID_LPN;
+	}
+}
+
 void fdp_ssd_init(FemuCtrl *n) 
 {
 	struct ssd *ssd = n->ssd;
 	struct ssdparams *spp = &ssd->sp;
+	struct reclaim_unit_handle *ruh = NULL;
+	int ruh_type;
 
 	// FIXME
 	// ftl_assert(ssd);
@@ -157,20 +198,46 @@ void fdp_ssd_init(FemuCtrl *n)
 	/* initialize all reclaim group */
 	ssd->gps = g_malloc0(sizeof(struct reclaim_group) * spp->nrg);
 
+	/* initialize all reclaim unit handle */
+	ssd->ruhs = g_malloc0(sizeof(struct reclaim_unit_handle) * spp->nruh);
+	/* initialize reclaim unit handle type */
+	if(spp->ruh_type == PERSIST_ISOLATED)
+		ruh_type = PERSIST_ISOLATED;
+	else 
+		ruh_type = INIT_ISOLATED;
+
+	for(int i = 0; i < spp->nruh; i++) {
+		ruh = &ssd->ruhs[i];
+		ruh->type = ruh_type;
+	}
+
 	/* initialize maptbl */
-	// ssd_init_maptbl(ssd);
+	ssd_init_maptbl(ssd);
+
+	/* initialize rmap */ 
+	ssd_init_rmap(ssd);
 	
 	/* initialize all the lines */
-	// ssd_init_lines(ssd);
+	ssd_init_lines(ssd);
 
 	ssd_init_write_pointer(ssd);
 
-	// FIXME
-	// initalize all lines with RUH type
-	if(spp->ruh_type == INIT_ISOLATED) 
-		return;
-	else 
-		return;
+	qemu_thread_create(&ssd->ftl_thread, "FEMU-FTL-Thread", ftl_thread, n, QEMU_THREAD_JOINABLE);
+	
+}
 
-	return;
+static void *ftl_thread(void *arg)
+{
+	FemuCtrl *n = (FemuCtrl *)arg;
+	struct ssd *ssd = n->ssd;
+
+	while (!*(ssd->dataplane_started_ptr)) {
+		usleep(100000);
+	}
+
+	while(1) {
+		// FIXME
+	}
+	
+	return NULL;
 }
