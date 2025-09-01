@@ -24,6 +24,8 @@ static void fdp_init(FemuCtrl *n, Error **errp)
 	fdp_ssd_init(n);
 }
 
+// FIXME:
+// admin_cmd, io_cmd (kernel error)
 int nvme_register_fdpssd(FemuCtrl *n)
 {
 	n->ext_ops = (FemuExtCtrlOps) {

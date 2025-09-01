@@ -27,7 +27,7 @@ static void ssd_init_write_pointer(struct ssd *ssd)
 static void ssd_init_lines(struct ssd *ssd) 
 {
 	struct ssdparams *spp = &ssd->sp;
-	struct reclaim_group **gps = &ssd->gps;
+	struct reclaim_group *gps = ssd->gps;
 	struct line_mgmt *lm;
 	struct line *line;
 
@@ -36,9 +36,14 @@ static void ssd_init_lines(struct ssd *ssd)
 	// lm->victim_line_pq 
 
 	for(int i = 0; i < spp->nrg; i++) {
-		lm = gps[i]->lm;
+		struct reclaim_group *g = &gps[i];
+
+		if(!g->lm) 
+			g->lm = g_malloc(sizeof(struct line_mgmt));
+		lm = g->lm;
+
 		lm->lines = g_malloc0(sizeof(struct line) * spp->tt_lines);
-		for(int j = 0; j < lm->tt_lines; j++) {
+		for(int j = 0; j < spp->tt_lines; j++) {
 			line = &lm->lines[j];
 			line->id = j;
 			line->ipc = 0;
