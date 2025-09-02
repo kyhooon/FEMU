@@ -5,6 +5,18 @@
 #define UNMAPPED_PPA (~(0ULL))
 
 enum {
+    FEMU_ENABLE_GC_DELAY = 1,
+    FEMU_DISABLE_GC_DELAY = 2,
+
+    FEMU_ENABLE_DELAY_EMU = 3,
+    FEMU_DISABLE_DELAY_EMU = 4, 
+
+    FEMU_RESET_ACCT = 5,
+    FEMU_ENABLE_LOG = 6,
+    FEMU_DISABLE_LOG = 7,
+};
+
+enum {
     NAND_READ = 0,
     NAND_WRITE = 1,
     NAND_ERASE = 2,
