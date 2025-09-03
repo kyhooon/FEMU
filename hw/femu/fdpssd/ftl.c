@@ -1,5 +1,37 @@
 #include "ftl.h"
 
+// FDP support
+//
+// hw/nvme/ctrl.c
+// nvme_do_write_fdp(NvmeCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb);
+//
+// fdp enable?
+// ns->endgrp->fdp.enabled option?
+// (hw/nvme/nvme.h)
+// struct NvmeNamespace {
+// 	...
+//	NvmeEnduranceGroup *endgrp;	
+//	...
+// }
+//
+// support ?
+// struct NvmeEnduranceGroup {
+//	struct {
+//		uint16_t 	nurh;
+//		uint16_t 	nrg;
+//		uint8_t 	rgif;
+//		uint64_t 	runs;
+//
+//		uint64_t	hbmw;
+//		uint64_t	mbmw;
+//		uint64_t	mbe;
+//
+//		bool	enabled;
+//
+//		NvmeRuHandle	*ruhs;
+//	} fdp;
+// } NvmeEnduranceGroup;
+
 static void *ftl_thread(void *arg);
 
 // FIXME:

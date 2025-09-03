@@ -106,7 +106,6 @@ static uint16_t fdp_io_cmd(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
 }
 
 // FIXME:
-// admin_cmd, io_cmd (kernel error)
 int nvme_register_fdpssd(FemuCtrl *n)
 {
 	n->ext_ops = (FemuExtCtrlOps) {
