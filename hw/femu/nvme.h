@@ -820,6 +820,7 @@ enum NvmeFeatureIds {
 	NVME_INTERRUPT_VECTOR_CONF      = 0x9,
 	NVME_WRITE_ATOMICITY            = 0xa,
 	NVME_ASYNCHRONOUS_EVENT_CONF    = 0xb,
+	NVME_FDP_MODE			= 0x1d,	// FIXME: FDP support	
 	NVME_TIMESTAMP                  = 0xe,
 	NVME_SOFTWARE_PROGRESS_MARKER   = 0x80,
 	NVME_FID_MAX                    = 0x100
@@ -855,6 +856,27 @@ typedef struct NvmeLBAF {
 } NvmeLBAF;
 
 #define NVME_NSID_BROADCAST 0xffffffff
+
+//FIXME: NvmeEnduranceGroup 
+typedef struct NvmeEnduranceGroup {
+	uint8_t event_conf;
+
+	struct { 
+		uint16_t 	nruh;		/* Number of RU handles */
+		uint16_t 	nrg;		/* Number of Reclaim Groups */
+		uint8_t 	rgif;		/* RG information Field ?? */
+		uint64_t	runs;		/* Reclaim Unit Nominal Size */
+
+		uint64_t	hbmw;		/* Host Bytes Written */
+		uint64_t	mbmw;		/* Media Bytes Written */
+		uint64_t	mbe;		/* Media Bytes Erased */
+
+		bool enabled;
+
+		// NvmeRuhandle *ruhs;
+	}fdp;
+
+} NvmeEnduranceGroup;
 
 typedef struct NvmeIdNs {
 	uint64_t    nsze;
@@ -1080,6 +1102,9 @@ typedef struct NvmeNamespace {
 	uint64_t        *tbl;
 	Oc12Bbt   **bbtbl;
 
+	/* FIXME: FEMU FDP supports */
+	NvmeEnduranceGroup *endgrp;
+
 	/* Coperd: OC20 */
 	struct {
 		uint64_t begin;
@@ -1170,7 +1195,7 @@ typedef struct BbCtrlParams {
 	int gc_thres_pcent_high;
 } BbCtrlParams;
 
-// kyhooon
+// FIXME:
 typedef struct FdpCtrlParams {
 	int secsz;
 	int secs_per_pg;

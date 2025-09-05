@@ -378,6 +378,7 @@ static int nvme_init_namespaces(FemuCtrl *n, Error **errp)
 
     for (i = 0; i < n->num_namespaces; i++) {
         NvmeNamespace *ns = &n->namespaces[i];
+
         ns->size = n->ns_size;
         ns->start_block = i * n->ns_size >> BDRV_SECTOR_BITS;
         ns->id = i + 1;
@@ -560,6 +561,25 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     n->elpes = g_malloc0(sizeof(*n->elpes) * (n->elpe + 1));
     n->aer_reqs = g_malloc0(sizeof(*n->aer_reqs) * (n->aerl + 1));
     n->features.int_vector_config = g_malloc0(sizeof(*n->features.int_vector_config) * (n->nr_io_queues + 1));
+
+    /* FIXME: for FDP support */
+    if(n->femu_mode == FEMU_FDPSSD_MODE) {
+	NvmeEnduranceGroup *endgrp = NULL;
+	NvmeNamespace *ns = NULL;
+	
+	ns = n->namespaces;
+        /* Only supports 1 EnduranceGroup now */
+	ns->endgrp = endgrp = g_malloc0(sizeof(NvmeEnduranceGroup));
+	// FIXME: runs need byte format
+	endgrp->fdp.nruh = n->fdp_params.nr_ruh;
+	endgrp->fdp.nrg = n->fdp_params.nr_rg;
+	endgrp->fdp.rgif = 0x01;
+	endgrp->fdp.runs = 0x4;	/* blks_per_line = 1 */
+	endgrp->fdp.hbmw = 0;
+	endgrp->fdp.mbmw = 0;
+	endgrp->fdp.mbe = 0;
+	endgrp->fdp.enabled = true;
+    }
 
     nvme_init_pci(n);
     nvme_init_ctrl(n);
