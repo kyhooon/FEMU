@@ -238,10 +238,10 @@ void fdp_ssd_init(FemuCtrl *n)
 	/* initialize all reclaim unit handle */
 	ssd->ruhs = g_malloc0(sizeof(struct reclaim_unit_handle) * spp->nruh);
 	/* initialize reclaim unit handle type */
-	if(spp->ruh_type == PERSIST_ISOLATED)
-		ruh_type = PERSIST_ISOLATED;
+	if(spp->ruh_type == NVME_RUHT_PERSISTENTLY_ISOLATED )
+		ruh_type = NVME_RUHT_PERSISTENTLY_ISOLATED;
 	else 
-		ruh_type = INIT_ISOLATED;
+		ruh_type = NVME_RUHT_INITIALLY_ISOLATED;
 
 	for(int i = 0; i < spp->nruh; i++) {
 		ruh = &ssd->ruhs[i];

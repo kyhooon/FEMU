@@ -623,6 +623,22 @@ static uint16_t nvme_identify(FemuCtrl *n, NvmeCmd *cmd)
     }
 }
 
+// FIXME: 
+//static int nvme_get_feature_fdp(FemuCtrl *n, uint32_t endgrpid,
+				//uint32_t *result)
+//{
+    //*result = 0;
+
+    //if(!n->endgrp->fdp.enabled){
+        //return NVME_INVALID_FIELD | NVME_DNR;
+    //}
+    // FIELD_DP16 func ?
+    // *result = FIELD_DP16(0, FEAT_FDP, FDPE, 1);
+    // *result = FIELD_DP16(*result, FEAT_FDP, CONF_NDX, 0);
+
+    //return NVME_SUCCESS;
+//}
+
 static uint16_t nvme_get_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
 {
     NvmeRangeType *rt;
@@ -631,6 +647,10 @@ static uint16_t nvme_get_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
     uint32_t nsid = le32_to_cpu(cmd->nsid);
     uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
     uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
+    // FIXME: FDP support
+    // uint16_t endgrpid = 0;
+    // uint16_t ret = 0;
+    // uint32_t result = 0;
 
     switch (dw10) {
     case NVME_ARBITRATION:
@@ -678,6 +698,16 @@ static uint16_t nvme_get_feature(FemuCtrl *n, NvmeCmd *cmd, NvmeCqe *cqe)
     case NVME_SOFTWARE_PROGRESS_MARKER:
         cqe->n.result = cpu_to_le32(n->features.sw_prog_marker);
         break;
+    // FIXME: nvme command for fdp support
+    case NVME_FDP_MODE: 
+        //endgrpid = dw11 & 0xff;
+        // if(endgrpid != 0x1) {
+            //return NVME_INVALID_FIELD | NVME_DNR;
+        //}
+        // ret = nvme_get_feature_fdp(n, endgrpid, &result);
+        //if (ret) {
+	    //return ret;
+	//}
     default:
         return NVME_INVALID_FIELD | NVME_DNR;
     }

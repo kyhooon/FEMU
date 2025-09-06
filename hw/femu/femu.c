@@ -533,6 +533,26 @@ static int nvme_register_extensions(FemuCtrl *n)
     return 0;
 }
 
+// FIXME: FDP support
+static bool nvme_init_fdp(FemuCtrl *n) {
+    NvmeNamespace *ns = n->namespaces;
+    NvmeEnduranceGroup *endgrp = NULL;
+	
+    /* Only supports 1 EnduranceGroup now */
+    ns->endgrp = endgrp = g_malloc0(sizeof(NvmeEnduranceGroup));
+    endgrp->fdp.nruh = n->fdp_params.nr_ruh;
+    endgrp->fdp.nrg = n->fdp_params.nr_rg;
+    endgrp->fdp.rgif = NVME_RUHT_INITIALLY_ISOLATED;
+    // FIXME: runs need byte format
+    endgrp->fdp.runs = 0x4;	/* blks_per_line = 1 */
+    endgrp->fdp.hbmw = 0;
+    endgrp->fdp.mbmw = 0;
+    endgrp->fdp.mbe = 0;
+    endgrp->fdp.enabled = true;
+
+    return true;
+}
+
 static void femu_realize(PCIDevice *pci_dev, Error **errp)
 {
     FemuCtrl *n = FEMU(pci_dev);
@@ -562,28 +582,13 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     n->aer_reqs = g_malloc0(sizeof(*n->aer_reqs) * (n->aerl + 1));
     n->features.int_vector_config = g_malloc0(sizeof(*n->features.int_vector_config) * (n->nr_io_queues + 1));
 
-    /* FIXME: for FDP support */
-    if(n->femu_mode == FEMU_FDPSSD_MODE) {
-	NvmeEnduranceGroup *endgrp = NULL;
-	NvmeNamespace *ns = NULL;
-	
-	ns = n->namespaces;
-        /* Only supports 1 EnduranceGroup now */
-	ns->endgrp = endgrp = g_malloc0(sizeof(NvmeEnduranceGroup));
-	// FIXME: runs need byte format
-	endgrp->fdp.nruh = n->fdp_params.nr_ruh;
-	endgrp->fdp.nrg = n->fdp_params.nr_rg;
-	endgrp->fdp.rgif = 0x01;
-	endgrp->fdp.runs = 0x4;	/* blks_per_line = 1 */
-	endgrp->fdp.hbmw = 0;
-	endgrp->fdp.mbmw = 0;
-	endgrp->fdp.mbe = 0;
-	endgrp->fdp.enabled = true;
-    }
-
     nvme_init_pci(n);
     nvme_init_ctrl(n);
     nvme_init_namespaces(n, errp);
+    // FIXME: hw/nvme/ns.c:(nvme_ns_init_fdp) 
+    if(n->femu_mode == FEMU_FDPSSD_MODE) {
+        nvme_init_fdp(n);
+    }
 
     nvme_register_extensions(n);
 

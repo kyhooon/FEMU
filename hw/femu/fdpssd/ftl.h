@@ -50,12 +50,6 @@ struct ppa {
     };
 };
 
-// Reclaim Uint Handle Type
-enum {
-    INIT_ISOLATED = 0,
-    PERSIST_ISOLATED = 1,
-};
-
 enum {
     SEC_FREE = 0,
     PG_FREE = 0

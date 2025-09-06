@@ -31,6 +31,12 @@
 #define NVME_ID_NS_LBAF_DS(ns, lba_index) (ns->id_ns.lbaf[lba_index].lbads)
 #define NVME_ID_NS_LBAF_MS(ns, lba_index) (ns->id_ns.lbaf[lba_index].ms)
 
+// FIXME: FDP support
+enum NvmeRuhType {
+	NVME_RUHT_INITIALLY_ISOLATED = 1,
+	NVME_RUHT_PERSISTENTLY_ISOLATED = 2,
+};
+
 typedef struct NvmeBar {
 	uint64_t    cap;
 	uint32_t    vs;
@@ -1104,6 +1110,11 @@ typedef struct NvmeNamespace {
 
 	/* FIXME: FEMU FDP supports */
 	NvmeEnduranceGroup *endgrp;
+	struct {
+		uint16_t nphs;
+		/* RUH identifiers indexed by placement handle */
+		uint16_t *phs;
+	}fdp;
 
 	/* Coperd: OC20 */
 	struct {
