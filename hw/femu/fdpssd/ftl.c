@@ -14,23 +14,6 @@
 //	...
 // }
 //
-// support ?
-// struct NvmeEnduranceGroup {
-//	struct {
-//		uint16_t 	nurh;
-//		uint16_t 	nrg;
-//		uint8_t 	rgif;
-//		uint64_t 	runs;
-//
-//		uint64_t	hbmw;
-//		uint64_t	mbmw;
-//		uint64_t	mbe;
-//
-//		bool	enabled;
-//
-//		NvmeRuHandle	*ruhs;
-//	} fdp;
-// } NvmeEnduranceGroup;
 
 static void *ftl_thread(void *arg);
 
@@ -253,14 +236,14 @@ void fdp_ssd_init(FemuCtrl *n)
 
 	/* initialize rmap */ 
 	ssd_init_rmap(ssd);
-	
+
 	/* initialize all the lines */
 	ssd_init_lines(ssd);
 
 	ssd_init_write_pointer(ssd);
 
 	qemu_thread_create(&ssd->ftl_thread, "FEMU-FTL-Thread", ftl_thread, n, QEMU_THREAD_JOINABLE);
-	
+
 }
 
 static void *ftl_thread(void *arg)
@@ -275,6 +258,6 @@ static void *ftl_thread(void *arg)
 	while(1) {
 		// FIXME
 	}
-	
+
 	return NULL;
 }

@@ -33,12 +33,12 @@
 
 // FIXME: FDP support
 enum NvmeRuhType {
-	NVME_RUHT_INITIALLY_ISOLATED = 1,
-	NVME_RUHT_PERSISTENTLY_ISOLATED = 2,
+	NVME_RUHT_INITIALLY_ISOLATED = 0,
+	NVME_RUHT_PERSISTENTLY_ISOLATED = 1,
 };
 
 typedef struct NvmeBar {
-	uint64_t    cap;
+        uint64_t    cap;
 	uint32_t    vs;
 	uint32_t    intms;
 	uint32_t    intmc;
@@ -863,27 +863,6 @@ typedef struct NvmeLBAF {
 
 #define NVME_NSID_BROADCAST 0xffffffff
 
-//FIXME: NvmeEnduranceGroup 
-typedef struct NvmeEnduranceGroup {
-	uint8_t event_conf;
-
-	struct { 
-		uint16_t 	nruh;		/* Number of RU handles */
-		uint16_t 	nrg;		/* Number of Reclaim Groups */
-		uint8_t 	rgif;		/* RG information Field ?? */
-		uint64_t	runs;		/* Reclaim Unit Nominal Size */
-
-		uint64_t	hbmw;		/* Host Bytes Written */
-		uint64_t	mbmw;		/* Media Bytes Written */
-		uint64_t	mbe;		/* Media Bytes Erased */
-
-		bool enabled;
-
-		// NvmeRuhandle *ruhs;
-	}fdp;
-
-} NvmeEnduranceGroup;
-
 typedef struct NvmeIdNs {
 	uint64_t    nsze;
 	uint64_t    ncap;
@@ -1092,6 +1071,51 @@ typedef struct Oc12Ctrl Oc12Ctrl;
 typedef struct NvmeIdNsZoned NvmeIdNsZoned;
 typedef struct NvmeZone NvmeZone;
 
+// FIXME:
+typedef struct FdpCtrlParams {
+	int secsz;
+	int secs_per_pg;
+	int pgs_per_blk;
+	int blks_per_pl;
+	int pls_per_lun;
+	int luns_per_ch;
+	int nchs;
+
+	int pg_rd_lat;
+	int pg_wr_lat;
+	int blk_er_lat;
+	int ch_xfer_lat;
+
+	int gc_thres_pcent;
+	int gc_thres_pcent_high;
+
+	int nr_ru;		// Number of Reclaim Unit
+	int nr_rg;		// Number of Reclaim Group
+	int nr_ruh;		// Number of Reclaim Unit Handle
+	int ruh_type;		// RUH type: (0 : Initially Isolated, 1: Persistently Isolated)
+} FdpCtrlParams;
+
+//FIXME: NvmeEnduranceGroup 
+typedef struct NvmeEnduranceGroup {
+	uint8_t event_conf;
+
+	struct { 
+		uint16_t 	nruh;		/* Number of RU handles */
+		uint16_t 	nrg;		/* Number of Reclaim Groups */
+		uint8_t 	rgif;		/* RG information Field ?? */
+		uint64_t	runs;		/* Reclaim Unit Nominal Size */
+
+		uint64_t	hbmw;		/* Host Bytes Written */
+		uint64_t	mbmw;		/* Media Bytes Written */
+		uint64_t	mbe;		/* Media Bytes Erased */
+
+		bool enabled;
+
+		// NvmeRuhandle *ruhs;
+	}fdp;
+
+} NvmeEnduranceGroup;
+
 typedef struct NvmeNamespace {
 	struct FemuCtrl *ctrl;
 	NvmeIdNs        id_ns;
@@ -1111,9 +1135,9 @@ typedef struct NvmeNamespace {
 	/* FIXME: FEMU FDP supports */
 	NvmeEnduranceGroup *endgrp;
 	struct {
-		uint16_t nphs;
+		uint16_t nphs;	/* Number of Placement Handles */
+		uint16_t *phs;	/* Placement Handle Set */
 		/* RUH identifiers indexed by placement handle */
-		uint16_t *phs;
 	}fdp;
 
 	/* Coperd: OC20 */
@@ -1205,30 +1229,6 @@ typedef struct BbCtrlParams {
 	int gc_thres_pcent;
 	int gc_thres_pcent_high;
 } BbCtrlParams;
-
-// FIXME:
-typedef struct FdpCtrlParams {
-	int secsz;
-	int secs_per_pg;
-	int pgs_per_blk;
-	int blks_per_pl;
-	int pls_per_lun;
-	int luns_per_ch;
-	int nchs;
-
-	int pg_rd_lat;
-	int pg_wr_lat;
-	int blk_er_lat;
-	int ch_xfer_lat;
-
-	int gc_thres_pcent;
-	int gc_thres_pcent_high;
-
-	int nr_ru;		// Number of Reclaim Unit
-	int nr_rg;		// Number of Reclaim Group
-	int nr_ruh;		// Number of Reclaim Unit Handle
-	int ruh_type;		// RUH type: (0 : Initially Isolated, 1: Persistently Isolated)
-} FdpCtrlParams;
 
 typedef struct ZNSCtrlParams {
 	uint8_t  zns_num_ch;

@@ -7,40 +7,40 @@
 
 static void nvme_clear_ctrl(FemuCtrl *n, bool shutdown)
 {
-    int i;
+	int i;
 
-    /* Coperd: pause nvme poller at earliest convenience */
-    n->dataplane_started = false;
+	/* Coperd: pause nvme poller at earliest convenience */
+	n->dataplane_started = false;
 
-    if (shutdown) {
-        femu_debug("shutting down NVMe Controller ...\n");
-    } else {
-        femu_debug("disabling NVMe Controller ...\n");
-    }
+	if (shutdown) {
+		femu_debug("shutting down NVMe Controller ...\n");
+	} else {
+		femu_debug("disabling NVMe Controller ...\n");
+	}
 
-    if (shutdown) {
-        femu_debug("%s,clear_guest_notifier\n", __func__);
-        nvme_clear_virq(n);
-    }
+	if (shutdown) {
+		femu_debug("%s,clear_guest_notifier\n", __func__);
+		nvme_clear_virq(n);
+	}
 
-    for (i = 0; i <= n->nr_io_queues; i++) {
-        if (n->sq[i] != NULL) {
-            nvme_free_sq(n->sq[i], n);
-        }
-    }
-    for (i = 0; i <= n->nr_io_queues; i++) {
-        if (n->cq[i] != NULL) {
-            nvme_free_cq(n->cq[i], n);
-        }
-    }
+	for (i = 0; i <= n->nr_io_queues; i++) {
+		if (n->sq[i] != NULL) {
+			nvme_free_sq(n->sq[i], n);
+		}
+	}
+	for (i = 0; i <= n->nr_io_queues; i++) {
+		if (n->cq[i] != NULL) {
+			nvme_free_cq(n->cq[i], n);
+		}
+	}
 
-    n->bar.cc = 0;
-    n->features.temp_thresh = 0x14d;
-    n->temp_warn_issued = 0;
-    n->dbs_addr = 0;
-    n->dbs_addr_hva = 0;
-    n->eis_addr = 0;
-    n->eis_addr_hva = 0;
+	n->bar.cc = 0;
+	n->features.temp_thresh = 0x14d;
+	n->temp_warn_issued = 0;
+	n->dbs_addr = 0;
+	n->dbs_addr_hva = 0;
+	n->eis_addr = 0;
+	n->eis_addr_hva = 0;
 }
 
 static int nvme_start_ctrl(FemuCtrl *n)
@@ -534,21 +534,32 @@ static int nvme_register_extensions(FemuCtrl *n)
 }
 
 // FIXME: FDP support
-static bool nvme_init_fdp(FemuCtrl *n) {
-    NvmeNamespace *ns = n->namespaces;
-    NvmeEnduranceGroup *endgrp = NULL;
-	
-    /* Only supports 1 EnduranceGroup now */
-    ns->endgrp = endgrp = g_malloc0(sizeof(NvmeEnduranceGroup));
-    endgrp->fdp.nruh = n->fdp_params.nr_ruh;
-    endgrp->fdp.nrg = n->fdp_params.nr_rg;
-    endgrp->fdp.rgif = NVME_RUHT_INITIALLY_ISOLATED;
+static void nvme_init_endgrp(FemuCtrl *n) 
+{
+	NvmeNamespace *ns = n->namespaces;
+	ns->endgrp = g_malloc0(sizeof(NvmeEnduranceGroup));
+
+	ns->endgrp->fdp.nruh = n->fdp_params.nr_ruh;
+    ns->endgrp->fdp.nrg = n->fdp_params.nr_rg;
+    ns->endgrp->fdp.rgif = n->fdp_params.ruh_type;
     // FIXME: runs need byte format
-    endgrp->fdp.runs = 0x4;	/* blks_per_line = 1 */
-    endgrp->fdp.hbmw = 0;
-    endgrp->fdp.mbmw = 0;
-    endgrp->fdp.mbe = 0;
-    endgrp->fdp.enabled = true;
+    ns->endgrp->fdp.runs = 0x4;	/* blks_per_line = 1 */
+    ns->endgrp->fdp.hbmw = 0;
+    ns->endgrp->fdp.mbmw = 0;
+    ns->endgrp->fdp.mbe = 0;
+    ns->endgrp->fdp.enabled = true;
+
+}
+
+// FIXME: FDP support
+/* Only supports 1 EnduranceGroup now */
+static bool nvme_init_fdp(FemuCtrl *n) 
+{
+    //NvmeNamespace *ns = n->namespaces;
+    //NvmeEnduranceGroup *endgrp = NULL;
+	
+	/* initialize Endurance Group */
+	nvme_init_endgrp(n);
 
     return true;
 }
@@ -725,7 +736,7 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("fdp_ru", FemuCtrl, fdp_params.nr_ru, 8),
     DEFINE_PROP_INT32("fdp_rg", FemuCtrl, fdp_params.nr_rg, 1),
     DEFINE_PROP_INT32("fdp_ruh", FemuCtrl, fdp_params.nr_ruh, 4),
-    DEFINE_PROP_INT32("fdp_ruh_type", FemuCtrl, fdp_params.ruh_type, 0),
+    DEFINE_PROP_INT32("fdp_ruh_type", FemuCtrl, fdp_params.ruh_type, NVME_RUHT_INITIALLY_ISOLATED),
     DEFINE_PROP_END_OF_LIST(),
 };
 
