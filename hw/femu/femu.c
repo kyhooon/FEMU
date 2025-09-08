@@ -537,11 +537,14 @@ static int nvme_register_extensions(FemuCtrl *n)
 static void nvme_init_endgrp(FemuCtrl *n) 
 {
 	NvmeNamespace *ns = n->namespaces;
-	ns->endgrp = g_malloc0(sizeof(NvmeEnduranceGroup));
 
+	/* EnduranceGroup Initilization */
+	ns->endgrp = g_malloc0(sizeof(NvmeEnduranceGroup));
 	ns->endgrp->fdp.nruh = n->fdp_params.nr_ruh;
     ns->endgrp->fdp.nrg = n->fdp_params.nr_rg;
-    ns->endgrp->fdp.rgif = n->fdp_params.ruh_type;
+	// rgif: RG Identifier Format
+    // ns->endgrp->fdp.rgif = n->
+
     // FIXME: runs need byte format
     ns->endgrp->fdp.runs = 0x4;	/* blks_per_line = 1 */
     ns->endgrp->fdp.hbmw = 0;
@@ -549,17 +552,40 @@ static void nvme_init_endgrp(FemuCtrl *n)
     ns->endgrp->fdp.mbe = 0;
     ns->endgrp->fdp.enabled = true;
 
+	ns->endgrp->fdp.ruhs = g_malloc0(sizeof(NvmeRuHandle) * n->fdp_params.nr_ruh);
 }
 
 // FIXME: FDP support
 /* Only supports 1 EnduranceGroup now */
 static bool nvme_init_fdp(FemuCtrl *n) 
 {
-    //NvmeNamespace *ns = n->namespaces;
-    //NvmeEnduranceGroup *endgrp = NULL;
-	
+	unsigned int i;
+	NvmeRuHandle *ruh;
+	NvmeEnduranceGroup *endgrp = NULL;
+	//unsigned int *ruhids = NULL;
+	NvmeNamespace *ns = n->namespaces;
+
 	/* initialize Endurance Group */
 	nvme_init_endgrp(n);
+
+	/* Reclaim Unit Handle Identifier */
+	// ruhids = g_malloc0(sizeof(unsigned int) * n->fdp_params.nr_ruh);
+
+	/* Placement Handles == Reclaim Unit Handle */
+	ns->fdp.phs = g_malloc0(sizeof(uint16_t) * n->fdp_params.nr_ruh);
+	ns->fdp.nphs = n->fdp_params.nr_ruh;
+
+	endgrp = ns->endgrp;
+	for( i = 0; i < ns->fdp.nphs; i++ ) {
+		ruh = &endgrp->fdp.ruhs[i];
+		ruh->ruht = NVME_RUHT_INITIALLY_ISOLATED;
+		ruh->ruha = NVME_RUHA_HOST;
+		ruh->rus = g_malloc0(sizeof(NvmeReclaimUnit) * n->fdp_params.nr_rg);
+		
+		//for( uint16_t rg = 0; rg < n->fdp.nr_rg; rg++ ) {
+			//ruh->rus[rg].ruamw = ruh->
+		//}
+	}
 
     return true;
 }

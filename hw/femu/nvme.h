@@ -37,6 +37,13 @@ enum NvmeRuhType {
 	NVME_RUHT_PERSISTENTLY_ISOLATED = 1,
 };
 
+// FIXME: FDP support 
+enum NvmeRuhAttributes {
+	// NVME_RUHA_UNUSED = 0,
+	NVME_RUHA_HOST = 1, 
+	// NVME_RUHA_CTRL = 2,
+};
+
 typedef struct NvmeBar {
         uint64_t    cap;
 	uint32_t    vs;
@@ -1072,6 +1079,23 @@ typedef struct NvmeIdNsZoned NvmeIdNsZoned;
 typedef struct NvmeZone NvmeZone;
 
 // FIXME:
+typedef struct NvmeReclaimUnit {
+	uint64_t ruamw;	/* reclaim Unit Available Media Writes */
+} NvmeReclaimUnit;
+
+// FIXME: 
+typedef struct NvmeRuHandle {
+	uint8_t ruht;	/* Reclaim Unit Handle Type (RUHT) */
+	uint8_t ruha;	/* Reclaim Unit Handle Attributes UNUSED/HOST/CTRL */
+	//uint64_t event_filter;
+	//uint8_t lbafi;
+	//uint64_t ruamw;
+
+	/* RU indexed by reclaim group */
+	NvmeReclaimUnit *rus;
+} NvmeRuHandle;
+
+// FIXME:
 typedef struct FdpCtrlParams {
 	int secsz;
 	int secs_per_pg;
@@ -1102,7 +1126,7 @@ typedef struct NvmeEnduranceGroup {
 	struct { 
 		uint16_t 	nruh;		/* Number of RU handles */
 		uint16_t 	nrg;		/* Number of Reclaim Groups */
-		uint8_t 	rgif;		/* RG information Field ?? */
+		uint8_t 	rgif;		/* RG Identifier Format */
 		uint64_t	runs;		/* Reclaim Unit Nominal Size */
 
 		uint64_t	hbmw;		/* Host Bytes Written */
@@ -1111,7 +1135,7 @@ typedef struct NvmeEnduranceGroup {
 
 		bool enabled;
 
-		// NvmeRuhandle *ruhs;
+		NvmeRuHandle *ruhs;
 	}fdp;
 
 } NvmeEnduranceGroup;
