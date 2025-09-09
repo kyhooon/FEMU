@@ -18,6 +18,8 @@
 #include "nand/nand.h"
 #include "timing-model/timing.h"
 
+#include "hw/registerfields.h"
+
 #define NVME_ID_NS_LBADS(ns)                                                  \
 	((ns)->id_ns.lbaf[NVME_ID_NS_FLBAS_INDEX((ns)->id_ns.flbas)].lbads)
 
@@ -43,6 +45,10 @@ enum NvmeRuhAttributes {
 	NVME_RUHA_HOST = 1, 
 	// NVME_RUHA_CTRL = 2,
 };
+
+REG32(FEAT_FDP, 0x0)
+	FIELD(FEAT_FDP, FDPE, 0, 1)
+	FIELD(FEAT_FDP, CONF_NDX, 8, 8);
 
 typedef struct NvmeBar {
         uint64_t    cap;
@@ -666,6 +672,12 @@ enum LogIdentifier {
 	NVME_LOG_SMART_INFO     = 0x02,
 	NVME_LOG_FW_SLOT_INFO   = 0x03,
 	NVME_LOG_CMD_EFFECTS    = 0x05,
+	// FIXME: FDP support 
+	NVME_LOG_ENDGRP			= 0x09,
+	NVME_LOG_FDP_CONFS		= 0x20,
+	NVME_LOG_FDP_RUH_USAGE	= 0x21,
+	NVME_LOG_FDP_STATS		= 0x22,
+	NVME_LOG_FDP_EVENTS		= 0x23,
 };
 
 typedef struct NvmePSD {
@@ -833,7 +845,8 @@ enum NvmeFeatureIds {
 	NVME_INTERRUPT_VECTOR_CONF      = 0x9,
 	NVME_WRITE_ATOMICITY            = 0xa,
 	NVME_ASYNCHRONOUS_EVENT_CONF    = 0xb,
-	NVME_FDP_MODE			= 0x1d,	// FIXME: FDP support	
+	NVME_FDP_MODE					= 0x1d,	// FIXME: FDP support
+	NVME_FDP_EVENTS					= 0x1e,	// FIXME: FDP support
 	NVME_TIMESTAMP                  = 0xe,
 	NVME_SOFTWARE_PROGRESS_MARKER   = 0x80,
 	NVME_FID_MAX                    = 0x100
