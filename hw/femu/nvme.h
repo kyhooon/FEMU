@@ -551,6 +551,7 @@ enum NvmeStatusCodes {
 	NVME_INVALID_NSID           = 0x000b,
 	NVME_CMD_SEQ_ERROR          = 0x000c,
 	NVME_INVALID_CMD_SET        = 0x002c,
+	NVME_FDP_DISABLED			= 0x0029,
 	NVME_LBA_RANGE              = 0x0080,
 	NVME_CAP_EXCEEDED           = 0x0081,
 	NVME_NS_NOT_READY           = 0x0082,
@@ -597,6 +598,13 @@ enum NvmeStatusCodes {
 };
 
 #define NVME_SET_CSI(vec, csi) (vec |= (uint8_t)(1 << (csi)))
+
+typedef struct NvmeFdpLog {
+	uint64_t hbmw[2];
+	uint64_t mbmw[2];
+	uint64_t mbe[2];
+	uint8_t rsvd48[16];
+} NvmeFdpLog;
 
 typedef struct NvmeFwSlotInfoLog {
 	uint8_t     afi;

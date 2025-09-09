@@ -105,17 +105,96 @@ static uint16_t fdp_io_cmd(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
 	}
 }
 
+// FIXME: 
+static uint16_t fdp_dma_read(FemuCtrl *n, uint8_t *ptr, 
+							uint32_t len, NvmeCmd *cmd) 
+{
+	uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
+	uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
+	
+	return dma_read_prp(n, ptr, len, prp1, prp2);
+}
+
+// FIXME: 
+static uint16_t fdp_stats(FemuCtrl *n, uint32_t buf_len,
+						uint64_t off, NvmeCmd *cmd) 
+{
+	NvmeNamespace *ns = n->namespaces;
+	NvmeEnduranceGroup *endgrp = ns->endgrp;
+	NvmeFdpLog log;
+	uint32_t trans_len;
+	uint16_t ret;
+
+	if ( off >= sizeof(NvmeFdpLog) ) {
+		femu_debug("invalid access\n");
+		return NVME_INVALID_FIELD | NVME_DNR;
+	}
+
+	if ( !endgrp->fdp.enabled ) {
+		femu_debug("FDP disabled\n");
+		return NVME_FDP_DISABLED | NVME_DNR;
+	}
+
+	trans_len = MIN(sizeof(log) - off, buf_len);
+
+	log.hbmw[0] = cpu_to_le64(endgrp->fdp.hbmw);
+	log.mbmw[0] = cpu_to_le64(endgrp->fdp.mbmw);
+	log.mbe[0] = cpu_to_le64(endgrp->fdp.mbe);
+
+	ret = fdp_dma_read(n, (uint8_t *)&log + off, trans_len, cmd);
+	if( ret ) {
+		return ret;
+	}
+	return NVME_SUCCESS;
+}
+
+// FIXME: 
+static uint16_t fdp_get_log(FemuCtrl *n, NvmeCmd *cmd) 
+{
+	uint32_t dw10 = le32_to_cpu(cmd->cdw10);
+	uint32_t dw11 = le32_to_cpu(cmd->cdw11);
+	uint32_t dw12 = le32_to_cpu(cmd->cdw12);
+	uint32_t dw13 = le32_to_cpu(cmd->cdw13);
+	uint16_t lid = dw10 & 0xffff;
+
+	uint32_t numdl, numdu, len;
+	uint64_t off, lpol, lpou;
+
+	/* numdl: Number of Dwords Lower */
+	/* numdu: Number of Dwords upper */
+	/* lpol : Log Page Offset Lower */
+	/* lpou : Log Page Offset Upper */
+	numdl = (dw10 >> 16);
+	numdu = (dw11 & 0xffff);
+	lpol = dw12;
+	lpou = dw13;
+
+	len = (((numdu << 16) | numdl) + 1) << 2;
+	off = (lpou << 32ULL) | lpol;
+
+	switch (lid) {
+		case NVME_LOG_FDP_STATS:
+			return fdp_stats(n, len, off, cmd);
+
+		case NVME_LOG_FDP_CONFS:
+		case NVME_LOG_FDP_RUH_USAGE:
+		case NVME_LOG_FDP_EVENTS:
+		default: 
+			return NVME_INVALID_OPCODE | NVME_DNR;
+	}
+}
+
 // FIXME:
 int nvme_register_fdpssd(FemuCtrl *n)
 {
 	n->ext_ops = (FemuExtCtrlOps) {
-		.state		= NULL,
-		.init		= fdp_init,
-		.exit		= NULL,
+		.state			= NULL,
+		.init			= fdp_init,
+		.exit			= NULL,
 		.rw_check_req	= NULL,
-		.admin_cmd	= fdp_admin_cmd, 
-		.io_cmd		= fdp_io_cmd,
-		.get_log	= NULL,
+		.admin_cmd		= fdp_admin_cmd, 
+		.io_cmd			= fdp_io_cmd,
+		.get_log		= fdp_get_log,
 	};
 
 	return 0;
