@@ -148,6 +148,76 @@ static uint16_t fdp_stats(FemuCtrl *n, uint32_t buf_len,
 	return NVME_SUCCESS;
 }
 
+// FIXME:
+static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
+							uint64_t off, NvmeCmd *cmd)
+{
+	uint16_t ret;
+	uint8_t type;
+	uint8_t *buf = NULL;
+	uint32_t log_size, trans_len;
+	size_t nruh, fdp_descr_size;
+	
+	FdpCtrlParams params = n->fdp_params;
+
+	NvmeNamespace *ns = n->namespaces;
+	NvmeEnduranceGroup *endgrp = ns->endgrp;
+
+	NvmeFdpDescrHdr *hdr = NULL;
+	NvmeRuhDescr *ruhd = NULL;
+	NvmeFdpConfsHdr *log = NULL;
+
+	if( !endgrp->fdp.enabled ) {
+		femu_debug("FDP disabled\n");
+		return NVME_FDP_DISABLED | NVME_DNR;
+	}
+
+	nruh = endgrp->fdp.nruh;
+	fdp_descr_size = ROUND_UP(sizeof(NvmeFdpDescrHdr) + nruh * sizeof(NvmeRuhDescr), 8);
+	log_size = sizeof(NvmeFdpConfsHdr) + fdp_descr_size;
+
+	if( off >= log_size ) {
+		return NVME_INVALID_FIELD | NVME_DNR;
+	}
+	trans_len = MIN(log_size - off, buf_len);
+	/* log buffer allocation */
+	buf = g_malloc0(log_size);
+	log = (NvmeFdpConfsHdr *)buf;
+	hdr = (NvmeFdpDescrHdr *)(log + 1);
+	ruhd = (NvmeRuhDescr *)(buf + sizeof(*log) + sizeof(*hdr));
+
+	log->num_confs = cpu_to_le16(0);
+	log->size = cpu_to_le32(log_size);
+	
+	hdr->descr_size = cpu_to_le16(fdp_descr_size);
+
+	if( params.ruh_type ==  NVME_RUHT_PERSISTENTLY_ISOLATED )
+		type = NVME_RUHT_PERSISTENTLY_ISOLATED;
+	
+	/* written to log */
+	if( endgrp->fdp.enabled ) {
+		hdr->fdpa = FIELD_DP8(hdr->fdpa, FDPA, VALID, 1);
+		hdr->fdpa = FIELD_DP8(hdr->fdpa, FDPA, RGIF, endgrp->fdp.rgif);
+		hdr->nrg = cpu_to_le16(endgrp->fdp.nrg); 
+		hdr->nruh = cpu_to_le16(endgrp->fdp.nruh);
+		hdr->maxpids = cpu_to_le16(NVME_FDP_MAXPIDS - 1);
+		hdr->nnss = cpu_to_le32(n->num_namespaces);
+		hdr->runs = cpu_to_le64(endgrp->fdp.runs);
+
+		for( int i = 0; i < nruh; i++ ) {
+			ruhd->ruht = type;	
+			ruhd++;
+		}
+	} else {
+		// FIXME: 
+	}
+	ret = fdp_dma_read(n, (uint8_t *)buf + off, trans_len, cmd);
+	if( ret ) {
+		return ret;	
+	}
+	return NVME_SUCCESS;
+} 
+
 // FIXME: 
 static uint16_t fdp_get_log(FemuCtrl *n, NvmeCmd *cmd) 
 {
@@ -177,6 +247,8 @@ static uint16_t fdp_get_log(FemuCtrl *n, NvmeCmd *cmd)
 			return fdp_stats(n, len, off, cmd);
 
 		case NVME_LOG_FDP_CONFS:
+			return fdp_confs(n, len, off, cmd);
+
 		case NVME_LOG_FDP_RUH_USAGE:
 		case NVME_LOG_FDP_EVENTS:
 		default: 

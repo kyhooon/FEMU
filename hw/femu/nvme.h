@@ -35,8 +35,8 @@
 
 // FIXME: FDP support
 enum NvmeRuhType {
-	NVME_RUHT_INITIALLY_ISOLATED = 0,
-	NVME_RUHT_PERSISTENTLY_ISOLATED = 1,
+	NVME_RUHT_INITIALLY_ISOLATED = 1,
+	NVME_RUHT_PERSISTENTLY_ISOLATED = 2,
 };
 
 // FIXME: FDP support 
@@ -45,6 +45,11 @@ enum NvmeRuhAttributes {
 	NVME_RUHA_HOST = 1, 
 	// NVME_RUHA_CTRL = 2,
 };
+
+REG8(FDPA, 0x0)
+	FIELD(FDPA, RGIF, 0, 4)
+	FIELD(FDPA, VWC, 4, 1)
+	FIELD(FDPA, VALID, 7, 1);
 
 REG32(FEAT_FDP, 0x0)
 	FIELD(FEAT_FDP, FDPE, 0, 1)
@@ -599,12 +604,45 @@ enum NvmeStatusCodes {
 
 #define NVME_SET_CSI(vec, csi) (vec |= (uint8_t)(1 << (csi)))
 
+// FIXME: fdp support
 typedef struct NvmeFdpLog {
 	uint64_t hbmw[2];
 	uint64_t mbmw[2];
 	uint64_t mbe[2];
 	uint8_t rsvd48[16];
 } NvmeFdpLog;
+
+// FIXME: fdp support
+typedef struct NvmeFdpConfsHdr {
+	uint16_t	num_confs;
+	uint8_t		version;
+	uint8_t		rsvd3;
+	uint32_t	size;
+	uint8_t		rsv8[8];
+} NvmeFdpConfsHdr;
+
+// FIXME: fdp support 
+typedef struct NvmeFdpDescrHdr {
+	uint16_t	descr_size;
+	uint8_t		fdpa;
+	uint8_t		vss;
+	uint32_t	nrg;
+	uint16_t	nruh;
+	uint16_t	maxpids;
+	uint32_t	nnss;
+	uint64_t	runs;
+	uint32_t	erutl;
+	uint8_t		rsvd28[36];
+} NvmeFdpDescrHdr;
+
+// FIXME: fdp support
+typedef struct NvmeRuhDescr {
+	uint8_t		ruht;
+	uint8_t		rsvd1[3];
+} NvmeRuhDescr;
+
+// FIXME: fdp support
+#define NVME_FDP_MAXPIDS 128
 
 typedef struct NvmeFwSlotInfoLog {
 	uint8_t     afi;
