@@ -41,7 +41,7 @@ enum NvmeRuhType {
 
 // FIXME: FDP support 
 enum NvmeRuhAttributes {
-	// NVME_RUHA_UNUSED = 0,
+	NVME_RUHA_UNUSED = 0,
 	NVME_RUHA_HOST = 1, 
 	// NVME_RUHA_CTRL = 2,
 };
@@ -1147,8 +1147,8 @@ typedef struct NvmeRuHandle {
 	uint8_t ruht;	/* Reclaim Unit Handle Type (RUHT) */
 	uint8_t ruha;	/* Reclaim Unit Handle Attributes UNUSED/HOST/CTRL */
 	//uint64_t event_filter;
-	//uint8_t lbafi;
-	//uint64_t ruamw;
+	uint8_t lbafi;
+	uint64_t ruamw;
 
 	/* RU indexed by reclaim group */
 	NvmeReclaimUnit *rus;
@@ -1175,7 +1175,7 @@ typedef struct FdpCtrlParams {
 	int nr_ru;		// Number of Reclaim Unit
 	int nr_rg;		// Number of Reclaim Group
 	int nr_ruh;		// Number of Reclaim Unit Handle
-	int ruh_type;		// RUH type: (0 : Initially Isolated, 1: Persistently Isolated)
+	int ruh_type;	// RUH type: (1 : Initially Isolated, 2: Persistently Isolated)
 } FdpCtrlParams;
 
 //FIXME: NvmeEnduranceGroup 
@@ -1185,7 +1185,7 @@ typedef struct NvmeEnduranceGroup {
 	struct { 
 		uint16_t 	nruh;		/* Number of RU handles */
 		uint16_t 	nrg;		/* Number of Reclaim Groups */
-		uint8_t 	rgif;		/* RG Identifier Format */
+		uint8_t 	rgif;		/* RG Identifier Format (MSB) */
 		uint64_t	runs;		/* Reclaim Unit Nominal Size */
 
 		uint64_t	hbmw;		/* Host Bytes Written */

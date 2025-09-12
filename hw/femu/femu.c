@@ -536,58 +536,102 @@ static int nvme_register_extensions(FemuCtrl *n)
 // FIXME: FDP support
 static void nvme_init_endgrp(FemuCtrl *n) 
 {
+	uint16_t val;
+	unsigned int i;
+	NvmeEnduranceGroup *endgrp = NULL;
 	NvmeNamespace *ns = n->namespaces;
 
 	/* EnduranceGroup Initilization */
 	ns->endgrp = g_malloc0(sizeof(NvmeEnduranceGroup));
-	ns->endgrp->fdp.nruh = n->fdp_params.nr_ruh;
-    ns->endgrp->fdp.nrg = n->fdp_params.nr_rg;
-	// rgif: RG Identifier Format
-    // ns->endgrp->fdp.rgif = n->
+	endgrp = ns->endgrp;
+	endgrp->fdp.nruh = n->fdp_params.nr_ruh;
+    endgrp->fdp.nrg = n->fdp_params.nr_rg;
 
-    // FIXME: runs need byte format
-    ns->endgrp->fdp.runs = 0x4;	/* blks_per_line = 1 */
-    ns->endgrp->fdp.hbmw = 0;
-    ns->endgrp->fdp.mbmw = 0;
-    ns->endgrp->fdp.mbe = 0;
-    ns->endgrp->fdp.enabled = true;
+	/* rgif */
+	val = n->fdp_params.nr_rg;
+	i = 0;
+	while (val) {
+		val >>= 1;
+		i++;
+	}
+	endgrp->fdp.rgif = i;
+		
+	// FIXME:
+	/* RU == Each Block */
+    endgrp->fdp.runs = MiB * 4;	
+    endgrp->fdp.hbmw = 0;
+    endgrp->fdp.mbmw = 0;
+    endgrp->fdp.mbe = 0;
+    endgrp->fdp.enabled = true;
 
-	ns->endgrp->fdp.ruhs = g_malloc0(sizeof(NvmeRuHandle) * n->fdp_params.nr_ruh);
+	/* reclaim unit handle arrays */
+	endgrp->fdp.ruhs = g_malloc0(sizeof(NvmeRuHandle) * n->fdp_params.nr_ruh);
+
+	for (uint16_t ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
+		endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
+			.ruht = n->fdp_params.ruh_type != 1 ? NVME_RUHT_INITIALLY_ISOLATED:NVME_RUHT_PERSISTENTLY_ISOLATED,
+			.ruha = NVME_RUHA_UNUSED,
+		};
+		endgrp->fdp.ruhs[ruhid].rus = g_malloc0(sizeof(NvmeReclaimUnit) * n->fdp_params.nr_rg);
+	} 
 }
 
 // FIXME: FDP support
 /* Only supports 1 EnduranceGroup now */
 static bool nvme_init_fdp(FemuCtrl *n) 
 {
-	unsigned int i;
 	NvmeRuHandle *ruh;
 	NvmeEnduranceGroup *endgrp = NULL;
-	//unsigned int *ruhids = NULL;
 	NvmeNamespace *ns = n->namespaces;
+	unsigned int i;
+	uint8_t lbafi = NVME_ID_NS_FLBAS_INDEX(ns->id_ns.flbas);
 
 	/* initialize Endurance Group */
 	nvme_init_endgrp(n);
 
-	/* Reclaim Unit Handle Identifier */
-	// ruhids = g_malloc0(sizeof(unsigned int) * n->fdp_params.nr_ruh);
-
+	/* namespace -> fdp.nphs, fdp.phs */
 	/* Placement Handles == Reclaim Unit Handle */
 	ns->fdp.phs = g_malloc0(sizeof(uint16_t) * n->fdp_params.nr_ruh);
 	ns->fdp.nphs = n->fdp_params.nr_ruh;
 
+	// FIXME:
 	endgrp = ns->endgrp;
 	for( i = 0; i < ns->fdp.nphs; i++ ) {
 		ruh = &endgrp->fdp.ruhs[i];
-		ruh->ruht = NVME_RUHT_INITIALLY_ISOLATED;
-		ruh->ruha = NVME_RUHA_HOST;
-		ruh->rus = g_malloc0(sizeof(NvmeReclaimUnit) * n->fdp_params.nr_rg);
-		
-		//for( uint16_t rg = 0; rg < n->fdp.nr_rg; rg++ ) {
-			//ruh->rus[rg].ruamw = ruh->
-		//}
+
+		switch (ruh->ruha) {
+		case NVME_RUHA_UNUSED:
+			ruh->ruha = NVME_RUHA_HOST;
+			ruh->lbafi = lbafi;
+			// FIXME: ruamw fomatting problem
+			ruh->ruamw = endgrp->fdp.runs;
+			
+			for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
+				ruh->rus[rg].ruamw = ruh->ruamw;
+			}
+			break;
+		case NVME_RUHA_HOST:
+		//case NVME_RUHA_CTRL: 
+			break;
+		default: 
+			abort();
+		}
 	}
 
     return true;
+}
+
+// FIXME
+static bool check_nr_rg(FemuCtrl *n)
+{
+	FdpCtrlParams params = n->fdp_params;
+	int nrg = params.nr_rg;
+
+	if( (nrg != 0 && (nrg & (nrg - 1)) == 0) ) {
+		if( nrg >= 2 && nrg <= 8 )
+			return true;
+	}
+	return false;
 }
 
 static void femu_realize(PCIDevice *pci_dev, Error **errp)
@@ -622,8 +666,10 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     nvme_init_pci(n);
     nvme_init_ctrl(n);
     nvme_init_namespaces(n, errp);
-    // FIXME: hw/nvme/ns.c:(nvme_ns_init_fdp) 
-    if(n->femu_mode == FEMU_FDPSSD_MODE) {
+
+	// FIXME:
+    if( (n->femu_mode == FEMU_FDPSSD_MODE) 
+					&& check_nr_rg(n) ) {
         nvme_init_fdp(n);
     }
 

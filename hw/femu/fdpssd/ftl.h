@@ -170,30 +170,10 @@ struct line_mgmt {
 	int full_line_cnt;
 };
 
-// FIXME: 
-struct reclaim_unit {
-};
-
-// FIXME: RG
-struct reclaim_group {
-	struct line_mgmt *lm;
-
-	// RG location  
-	int ch_id;
-	int lun_id;
-
-};
-
-struct reclaim_unit_handle {
-	// FIXME:
-	struct write_pointer wp;
-	int type;
-};
-
 // FIXME:
 struct ssd {
-	struct reclaim_group *gps; 		// reclaim group
-	struct reclaim_unit_handle *ruhs;   // reclaim unit handle
+	//struct reclaim_group *gps; 		// reclaim group
+	// struct reclaim_unit_handle *ruhs;   // reclaim unit handle
 
 	/* serval pointer with all of reclaim group */
 	struct write_pointer *wp;
