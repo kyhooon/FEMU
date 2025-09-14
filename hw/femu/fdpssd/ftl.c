@@ -28,40 +28,6 @@ static void ssd_init_write_pointer(struct ssd *ssd)
 	//}
 }
 
-// FIXME
-static void ssd_init_lines(struct ssd *ssd) 
-{
-	//struct ssdparams *spp = &ssd->sp;
-	// struct reclaim_group *gps = ssd->gps;
-	//struct line_mgmt *lm;
-	//struct line *line;
-
-	// QTAILQ_INIT(&lm->free_line_list);
-	// QTAILQ_INIT(&lm->full_line_list);
-	// lm->victim_line_pq 
-
-	// for(int i = 0; i < spp->nrg; i++) {
-	//	struct reclaim_group *g = &gps[i];
-
-	//	if(!g->lm) 
-	//		g->lm = g_malloc(sizeof(struct line_mgmt));
-	//	lm = g->lm;
-
-	//	lm->lines = g_malloc0(sizeof(struct line) * spp->tt_lines);
-	//	for(int j = 0; j < spp->tt_lines; j++) {
-	//		line = &lm->lines[j];
-	//		line->id = j;
-	//		line->ipc = 0;
-	//		line->vpc = 0;
-	//		lm->free_line_cnt++;
-	//	}
-	//	lm->victim_line_cnt = 0;
-	//	lm->full_line_cnt = 0;
-	//}
-
-	return;
-}
-
 static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n) 
 {
 	/* FDP support */
@@ -159,11 +125,37 @@ static void ssd_init_nand_lun(struct nand_lun *lun, struct ssdparams *spp)
 	}
 }
 
+// FIXME
+static void ssd_init_lines(struct line *line, struct ssdparams *spp)
+{
+	for(int i = 0; i < spp->tt_lines; i++) {
+		line[i].id = i;
+		line[i].ipc = 0;
+		line[i].vpc = 0;
+	}
+	return;
+}
+
 static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp) 
 {
+	struct nand_lun *lun = NULL;
+	struct pool *pool = NULL;
+
 	ch->nluns = spp->luns_per_ch;
 	ch->lun = g_malloc0(sizeof(struct nand_lun) * ch->nluns);
 	for(int i = 0; i < ch->nluns; i++) {
+		//FIXME: 
+		lun = &ch->lun[i];
+		pool = lun->pool = g_malloc0(sizeof(struct pool));
+		pool->tt_lines = spp->tt_lines;
+		pool->free_line_cnt = spp->tt_lines;
+		pool->victim_line_cnt = 0;
+		pool->full_line_cnt = 0;
+
+		pool->lines = g_malloc0(sizeof(struct line) * pool->tt_lines);
+
+		ssd_init_lines(pool->lines, spp);
+	
 		ssd_init_nand_lun(&ch->lun[i], spp);
 	}
 }
@@ -193,7 +185,6 @@ void fdp_ssd_init(FemuCtrl *n)
 {
 	struct ssd *ssd = n->ssd;
 	struct ssdparams *spp = &ssd->sp;
-	// struct reclaim_unit_handle *ruh = NULL;
 
 	// FIXME
 	// ftl_assert(ssd);
@@ -205,14 +196,6 @@ void fdp_ssd_init(FemuCtrl *n)
 	for(int i = 0; i < spp->nchs; i++) {
 		ssd_init_ch(&ssd->ch[i], spp);
 	}
-	/* initialize all reclaim group */
-	// ssd->gps = g_malloc0(sizeof(struct reclaim_group) * spp->nrg);
-
-	/* initialize all reclaim unit handle */
-	// ssd->ruhs = g_malloc0(sizeof(struct reclaim_unit_handle) * spp->nruh);
-	/* initialize reclaim unit handle type */
-
-	// ruh_type = spp->ruh_type == 1 ? NVME_RUHT_INITIALLY_ISOLATED : NVME_RUHT_PERSISTENTLY_ISOLATED;
 
 	/* initialize maptbl */
 	ssd_init_maptbl(ssd);
@@ -221,7 +204,7 @@ void fdp_ssd_init(FemuCtrl *n)
 	ssd_init_rmap(ssd);
 
 	/* initialize all the lines */
-	ssd_init_lines(ssd);
+	// ssd_init_lines(ssd);
 
 	ssd_init_write_pointer(ssd);
 

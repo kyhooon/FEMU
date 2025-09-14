@@ -55,6 +55,22 @@ enum {
 	PG_FREE = 0
 };
 
+typedef struct line {
+	int id;	// block id
+	int ipc;	// invalid page count in this line
+	int vpc;	// valid page count in this line 
+}line;
+
+// FIXME: 
+typedef struct pool {
+	struct line *lines;
+
+	int tt_lines;
+	int free_line_cnt;
+	int victim_line_cnt;
+	int full_line_cnt;
+} pool;
+
 typedef int nand_sec_status_t;
 
 struct nand_page {
@@ -77,6 +93,7 @@ struct nand_plane {
 };
 
 struct nand_lun {
+	pool *pool;
 	struct nand_plane *pl;
 	int npls;
 };
@@ -138,7 +155,7 @@ struct ssdparams {
 	int nru;            // total # of Reclaim Unit in the SSD
 	int nrg;            // total # of Reclaim Group in the SSD
 	int nruh;           // total # of Reclaim Unit Handle in the SSD
-	int ruh_type;       // 1) Initially Isolated, 2) Persistently Isolated
+	int ruh_type;       // Initially Isolated (1), Persistently Isolated (2)
 };
 
 // FIXME: 
@@ -150,12 +167,6 @@ struct write_pointer {
 	int blk;
 	int pl;
 };
-
-typedef struct line {
-	int id;	// block id
-	int ipc;	// invalid page count in this line
-	int vpc;	// valid page count in this line 
-}line;
 
 // FIXME:
 struct line_mgmt {
@@ -172,18 +183,18 @@ struct line_mgmt {
 
 // FIXME:
 struct ssd {
-	//struct reclaim_group *gps; 		// reclaim group
-	// struct reclaim_unit_handle *ruhs;   // reclaim unit handle
-
-	/* serval pointer with all of reclaim group */
 	struct write_pointer *wp;
 
+	char *ssdname;
 	struct ssdparams sp;
+	struct ssd_channel *ch;
 	struct ppa *maptbl;	/* page level mapping table */
 	uint64_t *rmap;	/* reverse mapptbl, assume it's stored in OOB */
-	struct ssd_channel *ch;
-	char *ssdname;
 	bool *dataplane_started_ptr;
+
+	/* lockless ring for communication with NVMe IO thread */
+	struct rte_ring **to_ftl;
+	struct rte_ring **to_poller;
 
 	QemuThread ftl_thread;
 };
