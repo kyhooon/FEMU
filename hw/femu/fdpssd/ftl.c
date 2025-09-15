@@ -9,22 +9,36 @@
 static void *ftl_thread(void *arg);
 
 // FIXME:
-static void ssd_init_write_pointer(struct ssd *ssd)
+static void ssd_init_write_pointer(struct ssd *ssd, FemuCtrl *n)
 {
-	//struct ssdparams *spp = &ssd->sp;
-	//struct write_pointer *wp = NULL;
+	struct ssdparams *spp = &ssd->sp;
+	//NvmeNamespace *ns = n->namespaces;
+	//NvmeEnduranceGroup *endgrp = ns->endgrp;
 
-	/* initialize ruhs write pointer */
-	//for(int i = 0; i < spp->nruh; i++) {
-		//ruh = &ssd->ruhs[i];
-		//wp = &ruh->wp;
-		// wp->curline = ;
-		//wp->ch = 0;
-		//wp->lun = 0;
-		//wp->pg = 0;
-		//wp->blk = 0;
-		//wp->pl = 0;
-	//}
+	int i;
+	//int lines_per_ruh;
+	int nruh = spp->nruh;
+
+	if( nruh <= 0 ) {
+		nruh = 1;
+	}
+
+	//lines_per_ruh = spp->tt_lines / nruh;
+	ssd->wp = g_malloc0(sizeof(struct write_pointer) * nruh);
+
+	for(i = 0; i < nruh; i++) {
+		struct write_pointer *wp =  &ssd->wp[i];
+
+		wp->ruh_id = i;
+		wp->rg_id = 0;
+
+		wp->ch = 0;
+		wp->lun = 0;
+		wp->pl = 0;
+		wp->blk = 0;
+		wp->pg = 0;	
+	}
+		
 }
 
 static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n) 
@@ -191,7 +205,6 @@ static bool fdp_ssd_setup(struct ssd *ssd, FemuCtrl *n)
 	struct ssd_channel *ch = NULL;
 	struct nand_lun *lun = NULL;
 	int lines_per_ruh;
-	//int rgs_per_ch;
 	int i, j;
 
 	if( !endgrp->fdp.enabled ) {
@@ -200,7 +213,6 @@ static bool fdp_ssd_setup(struct ssd *ssd, FemuCtrl *n)
 	}
 
 	lines_per_ruh = spp->tt_lines / endgrp->fdp.nruh; 	/* line_per_ruh */
-	//rgs_per_ch = spp->luns_per_ch / endgrp->fdp.nrg;	/* rgs_per_ch */
 
 	for(i = 0; i < spp->nchs; i++) {
 		ch = &ssd->ch[i];
@@ -241,7 +253,7 @@ void fdp_ssd_init(FemuCtrl *n)
 	/* initialize rmap */ 
 	ssd_init_rmap(ssd);
 
-	ssd_init_write_pointer(ssd);
+	ssd_init_write_pointer(ssd, n);
 
 	qemu_thread_create(&ssd->ftl_thread, "FEMU-FTL-Thread", ftl_thread, n, QEMU_THREAD_JOINABLE);
 

@@ -168,6 +168,10 @@ struct write_pointer {
 	int pg;
 	int blk;
 	int pl;
+	
+	// FDP
+	int ruh_id;
+	int rg_id;
 };
 
 // FIXME:
