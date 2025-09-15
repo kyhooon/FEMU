@@ -13,7 +13,6 @@ static void ssd_init_write_pointer(struct ssd *ssd)
 {
 	//struct ssdparams *spp = &ssd->sp;
 	//struct write_pointer *wp = NULL;
-	// struct line *curline = NULL;
 
 	/* initialize ruhs write pointer */
 	//for(int i = 0; i < spp->nruh; i++) {
@@ -151,6 +150,7 @@ static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp)
 		pool->free_line_cnt = spp->tt_lines;
 		pool->victim_line_cnt = 0;
 		pool->full_line_cnt = 0;
+		pool->open_line = 0;
 
 		pool->lines = g_malloc0(sizeof(struct line) * pool->tt_lines);
 
@@ -181,30 +181,65 @@ static void ssd_init_rmap(struct ssd *ssd)
 	}
 }
 
+// FIXME
+static bool fdp_ssd_setup(struct ssd *ssd, FemuCtrl *n) 
+{
+	struct ssdparams *spp = &ssd->sp;
+	NvmeNamespace *ns = n->namespaces;
+	NvmeEnduranceGroup *endgrp = ns->endgrp;
+	pool *pool = NULL;
+	struct ssd_channel *ch = NULL;
+	struct nand_lun *lun = NULL;
+	int lines_per_ruh;
+	//int rgs_per_ch;
+	int i, j;
+
+	if( !endgrp->fdp.enabled ) {
+		femu_debug("Can't support FDP mode\n");
+		return false;
+	}
+
+	lines_per_ruh = spp->tt_lines / endgrp->fdp.nruh; 	/* line_per_ruh */
+	//rgs_per_ch = spp->luns_per_ch / endgrp->fdp.nrg;	/* rgs_per_ch */
+
+	for(i = 0; i < spp->nchs; i++) {
+		ch = &ssd->ch[i];
+		for(j = 0; j < spp->luns_per_ch; j++ ) {
+			lun = &ch->lun[j];
+			pool = &lun->pool[j];
+			pool->open_line = lines_per_ruh;
+		}
+	}
+
+	return true;
+}
+
 void fdp_ssd_init(FemuCtrl *n) 
 {
 	struct ssd *ssd = n->ssd;
 	struct ssdparams *spp = &ssd->sp;
+	//struct NvmeNamespace *ns = n->namespaces;
+	//struct NvmeEnduranceGroup *endgrp = ns->endgrp;
 
 	// FIXME
 	// ftl_assert(ssd);
 
 	ssd_init_params(spp, n);
-
+	
 	/* initialize ssd internal layout architecture */
 	ssd->ch = g_malloc0(sizeof(struct ssd_channel) * spp->nchs);
 	for(int i = 0; i < spp->nchs; i++) {
 		ssd_init_ch(&ssd->ch[i], spp);
 	}
 
+	/* RUH, RG, interface */
+	fdp_ssd_setup(ssd, n);
+
 	/* initialize maptbl */
 	ssd_init_maptbl(ssd);
 
 	/* initialize rmap */ 
 	ssd_init_rmap(ssd);
-
-	/* initialize all the lines */
-	// ssd_init_lines(ssd);
 
 	ssd_init_write_pointer(ssd);
 

@@ -65,6 +65,8 @@ typedef struct line {
 typedef struct pool {
 	struct line *lines;
 
+	int open_line;
+
 	int tt_lines;
 	int free_line_cnt;
 	int victim_line_cnt;
