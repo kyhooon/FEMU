@@ -51,6 +51,11 @@ struct ppa {
 };
 
 enum {
+	USER_IO = 0,
+	GC_IO = 1,
+};
+
+enum {
 	SEC_FREE = 0,
 	PG_FREE = 0
 };
@@ -92,12 +97,18 @@ struct nand_block {
 struct nand_plane {
 	struct nand_block *blk;
 	int nblks;
+	uint64_t next_lun_avail_time;
+	bool busy;
+	uint64_t gc_endtime;
 };
 
 struct nand_lun {
 	pool *pool;
 	struct nand_plane *pl;
 	int npls;
+	uint64_t next_lun_avail_time;
+	bool busy;
+	uint64_t gc_endtime;
 };
 
 struct ssd_channel {
@@ -187,6 +198,12 @@ struct line_mgmt {
 	int full_line_cnt;
 };
 
+struct nand_cmd {
+	int type;
+	int cmd;
+	int64_t stime;	/* Coperd: request arrival time */
+};
+
 // FIXME:
 struct ssd {
 	struct write_pointer *wp;
@@ -213,4 +230,14 @@ void fdp_ssd_init(FemuCtrl *n);
 #else 
 #define ftl_debug(fmt, ...) \
 	do { } while (0);
+#endif
+
+#define ftl_err(fmt, ...) \
+	do { fprintf(stderr, "[FEMU] FTL-Err: " fmt, ## __VA_ARGS__); } while (0)
+
+/* FEMU assert() */
+#ifdef FEMU_DEBUG_FTL
+#define ftl_assert(expression) assert(expression)
+#else 
+#define ftl_assert(expression)
 #endif

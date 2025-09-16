@@ -8,6 +8,48 @@
 
 static void *ftl_thread(void *arg);
 
+static inline struct ppa get_maptbl_ent(struct ssd *ssd, uint64_t lpn) 
+{
+	return ssd->maptbl[lpn];
+}
+
+static inline bool mapped_ppa(struct ppa *ppa)
+{
+	return !(ppa->ppa == UNMAPPED_PPA);
+}
+
+static inline struct ssd_channel *get_ch(struct ssd *ssd, struct ppa *ppa) 
+{
+	return &(ssd->ch[ppa->g.ch]);
+}
+
+static inline struct nand_lun *get_lun(struct ssd *ssd, struct ppa *ppa) 
+{
+	struct ssd_channel *ch = get_ch(ssd, ppa);
+	return &(ch->lun[ppa->g.lun]);
+}
+
+static inline bool valid_ppa(struct ssd *ssd, struct ppa *ppa) 
+{
+	struct ssdparams *spp = &ssd->sp;
+	int ch = ppa->g.ch;
+	int lun = ppa->g.lun;
+	int pl = ppa->g.pl;
+	int blk = ppa->g.blk;
+	int pg = ppa->g.pg;
+	int sec = ppa->g.sec;
+
+	if( ch >= 0 && ch < spp->nchs 
+		&& lun >= 0 && lun < spp->luns_per_ch 
+		&& pl >= 0 && pl < spp->pls_per_lun 
+		&& blk >= 0 && blk < spp->blks_per_pl 
+		&& pg >= 0 && pg < spp->pgs_per_blk 
+		&& sec >= 0 && sec < spp->secs_per_pg ) 
+		return true;
+	
+	return false;
+}
+
 // FIXME:
 static void ssd_init_write_pointer(struct ssd *ssd, FemuCtrl *n)
 {
@@ -159,6 +201,9 @@ static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp)
 	for(int i = 0; i < ch->nluns; i++) {
 		//FIXME: 
 		lun = &ch->lun[i];
+		lun->next_lun_avail_time = 0;
+		lun->busy = false;
+
 		pool = lun->pool = g_malloc0(sizeof(struct pool));
 		pool->tt_lines = spp->tt_lines;
 		pool->free_line_cnt = spp->tt_lines;
@@ -230,8 +275,6 @@ void fdp_ssd_init(FemuCtrl *n)
 {
 	struct ssd *ssd = n->ssd;
 	struct ssdparams *spp = &ssd->sp;
-	//struct NvmeNamespace *ns = n->namespaces;
-	//struct NvmeEnduranceGroup *endgrp = ns->endgrp;
 
 	// FIXME
 	// ftl_assert(ssd);
@@ -259,17 +302,124 @@ void fdp_ssd_init(FemuCtrl *n)
 
 }
 
+static uint64_t ssd_advance_status(struct ssd *ssd, struct ppa *ppa, 
+									struct nand_cmd *ncmd)
+{
+	int c = ncmd->cmd;
+	uint64_t nand_stime;
+	uint64_t lat = 0;
+	/* request arrival time */
+	uint64_t cmd_stime = (ncmd->stime == 0 ) ? \
+				qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : ncmd->stime;
+	struct ssdparams *spp = &ssd->sp;
+	struct nand_lun *lun = get_lun(ssd, ppa);
+
+	switch (c) {
+	case NAND_READ:
+		/* read: perform NAND cmd first */
+		nand_stime = (lun->next_lun_avail_time < cmd_stime) ? cmd_stime : \
+						lun->next_lun_avail_time;
+		lun->next_lun_avail_time = nand_stime + spp->pg_rd_lat;
+		lat = lun->next_lun_avail_time - cmd_stime;
+		break;
+	case NAND_WRITE:
+		break;
+	case NAND_ERASE:
+		break;
+	default:
+		ftl_err("Unsupported NAND command: 0x%x\n", c);
+	}
+
+	return lat;
+}
+
+static uint64_t ssd_read(struct ssd *ssd, NvmeRequest *req)
+{
+	struct ssdparams *spp = &ssd->sp;
+	uint64_t lba = req->slba;	
+	int nsecs = req->nlb;
+	struct ppa ppa;
+	uint64_t start_lpn = lba / spp->secs_per_pg;
+	uint64_t end_lpn = (lba + nsecs - 1) / spp->secs_per_pg;
+	uint64_t lpn;
+	uint64_t sublat, maxlat = 0;
+	
+	if (end_lpn >= spp->tt_pgs) {
+		ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
+	}
+
+	/* normal IO read path */ 
+	for (lpn = start_lpn; lpn <= end_lpn; lpn++) {
+		ppa = get_maptbl_ent(ssd, lpn);
+		if( !mapped_ppa(&ppa) || !valid_ppa(ssd, &ppa) ) {
+			continue;
+		}
+
+		struct nand_cmd srd;
+		srd.type = USER_IO;
+		srd.cmd = NAND_READ;
+		srd.stime = req->stime;
+		sublat = ssd_advance_status(ssd, &ppa, &srd);
+		maxlat = (sublat > maxlat) ? sublat : maxlat;
+	}
+
+	return maxlat;
+}
+
 static void *ftl_thread(void *arg)
 {
 	FemuCtrl *n = (FemuCtrl *)arg;
 	struct ssd *ssd = n->ssd;
+	NvmeRequest *req = NULL;
+	uint64_t lat = 0;
+	int rc;
+	int i;
 
 	while (!*(ssd->dataplane_started_ptr)) {
 		usleep(100000);
 	}
 
+	ssd->to_ftl = n->to_ftl;
+	ssd->to_poller = n->to_poller;
+
 	while(1) {
 		// FIXME
+		for(i = 1; i <= n->nr_pollers; i++) {
+			if( !ssd->to_ftl[i] || !femu_ring_count(ssd->to_ftl[i]) )
+				continue;
+			
+			rc = femu_ring_dequeue(ssd->to_ftl[i], (void *)&req, 1);
+			if( rc != 1) {
+				printf("FEMU: FTL to_ftl dequeue failed\n");
+			}
+			ftl_assert(req);
+			switch (req->cmd.opcode) {
+			case NVME_CMD_WRITE:
+				//lat = ssd_write(ssd, req);			
+				break;
+			case NVME_CMD_READ:
+				lat = ssd_read(ssd, req);
+				break;
+			case NVME_CMD_DSM:
+				//FIXME:
+				break;
+			default:
+				;
+			}
+			
+			req->reqlat = lat;
+			req->expire_time += lat;
+
+			rc = femu_ring_enqueue(ssd->to_poller[i], (void *)&req, 1);
+			if (rc != 1) {
+				ftl_err("FTL to_poller enqueue failed\n");
+			}
+
+			/* check gc */
+			//if (should_gc(ssd)) {
+				//do_gc(ssd, false);
+			//}
+		}
 	}
 
 	return NULL;
