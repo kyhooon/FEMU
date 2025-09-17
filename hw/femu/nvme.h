@@ -605,6 +605,12 @@ enum NvmeStatusCodes {
 #define NVME_SET_CSI(vec, csi) (vec |= (uint8_t)(1 << (csi)))
 
 // FIXME: fdp support
+enum NvmeDirectiveTypes {
+	NVME_DIRECTIVE_IDENTIFY			= 0x0,
+	NVME_DIRECTIVE_DATA_PLACEMENT	= 0x2,
+};
+
+// FIXME: fdp support
 typedef struct NvmeFdpLog {
 	uint64_t hbmw[2];
 	uint64_t mbmw[2];

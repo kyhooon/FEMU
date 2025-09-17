@@ -57,7 +57,12 @@ enum {
 
 enum {
 	SEC_FREE = 0,
-	PG_FREE = 0
+	SEC_INVALID = 1,
+	SEC_VALID = 2,
+
+	PG_FREE = 0,
+	PG_INVALID = 1,
+	PG_VALID = 2
 };
 
 typedef struct line {

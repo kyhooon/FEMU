@@ -8,6 +8,86 @@
 
 static void *ftl_thread(void *arg);
 
+// FIXME
+static inline bool nvme_ph_valid(NvmeNamespace *ns, uint16_t ph) 
+{	
+	return ph < ns->fdp.nphs;
+}
+
+// FIXME
+static inline bool nvme_rg_valid(NvmeEnduranceGroup *endgrp, uint16_t rg) 
+{
+	return rg < endgrp->fdp.nrg;
+}
+
+// FIXME
+static inline uint16_t nvme_pid2ph(NvmeNamespace *ns, uint16_t pid) 
+{
+	uint16_t rgif = ns->endgrp->fdp.rgif;
+	
+	if (!rgif) {
+		return pid;
+	}
+
+	return pid & ((1 << (15 - rgif)) - 1);
+}
+
+// FIXME 
+static inline uint16_t nvme_pid2rg(NvmeNamespace *ns, uint16_t pid)
+{
+	uint16_t rgif = ns->endgrp->fdp.rgif;
+
+	if (!rgif) {
+		return 0;
+	}
+
+	return pid >> (16 - rgif);
+}
+
+// FIXME
+static inline bool nvme_parse_pid(NvmeNamespace *ns, uint16_t pid,
+									uint16_t *ph, uint16_t *rg)
+{
+	*rg = nvme_pid2rg(ns, pid);
+	*ph = nvme_pid2ph(ns, pid);
+
+	return nvme_ph_valid(ns, *ph) && nvme_rg_valid(ns->endgrp, *rg);
+}
+
+// FIXME 
+static inline struct ssd_channel *get_ch(struct ssd *ssd, struct ppa *ppa)
+{
+	return &(ssd->ch[ppa->g.ch]);
+}
+
+// FIXME
+static inline struct nand_lun *get_lun(struct ssd *ssd, struct ppa *ppa) 
+{
+	struct ssd_channel *ch = get_ch(ssd, ppa);
+	return &(ch->lun[ppa->g.lun]);
+}
+
+// FIXME
+static inline struct nand_plane *get_pl(struct ssd *ssd, struct ppa *ppa) 
+{
+	struct nand_lun *lun = get_lun(ssd, ppa);
+	return &(lun->pl[ppa->g.pl]);
+}
+
+// FIXME
+static inline struct nand_block *get_blk(struct ssd *ssd, struct ppa *ppa) 
+{
+	struct nand_plane *pl = get_pl(ssd, ppa);
+	return &(pl->blk[ppa->g.blk]);
+}
+
+// FIXME
+static inline struct nand_page *get_pg(struct ssd *ssd, struct ppa *ppa)
+{
+	struct nand_block *blk = get_blk(ssd, ppa);
+	return &(blk->pg[ppa->g.pg]);
+}
+
 static inline struct ppa get_maptbl_ent(struct ssd *ssd, uint64_t lpn) 
 {
 	return ssd->maptbl[lpn];
@@ -16,17 +96,6 @@ static inline struct ppa get_maptbl_ent(struct ssd *ssd, uint64_t lpn)
 static inline bool mapped_ppa(struct ppa *ppa)
 {
 	return !(ppa->ppa == UNMAPPED_PPA);
-}
-
-static inline struct ssd_channel *get_ch(struct ssd *ssd, struct ppa *ppa) 
-{
-	return &(ssd->ch[ppa->g.ch]);
-}
-
-static inline struct nand_lun *get_lun(struct ssd *ssd, struct ppa *ppa) 
-{
-	struct ssd_channel *ch = get_ch(ssd, ppa);
-	return &(ch->lun[ppa->g.lun]);
 }
 
 static inline bool valid_ppa(struct ssd *ssd, struct ppa *ppa) 
@@ -333,6 +402,88 @@ static uint64_t ssd_advance_status(struct ssd *ssd, struct ppa *ppa,
 	return lat;
 }
 
+// FIXME
+/* update SSD status about one page from PG_VALID -> PG_INVALID */
+static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa) 
+{
+	//struct ssdparams *spp = &ssd->sp;
+	struct nand_block *blk = NULL;
+	struct nand_page *pg = NULL;
+
+	/* update corresponding page status */
+	pg = get_pg(ssd, ppa);
+	ftl_assert(pg->status == PG_VALID);
+	pg->status = PG_INVALID;
+
+	/* update corresponding block status */
+	blk = get_blk(ssd, ppa);
+	//ftl_assert(blk->ipc >= 0 && blk->ipc < spp->pgs_per_blk);
+	blk->ipc++;
+	//ftl_assert(blk->vpc > 0 && blk->vpc <= spp->pgs_per_blk);
+	blk->vpc--;
+
+	/* update corresponding line status */
+	
+	return;
+}
+
+// FIXME
+static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
+{
+	struct ssd *ssd = n->ssd;
+	struct ssdparams *spp = &ssd->sp;
+	struct ppa ppa;
+	//NvmeRwCmd *rw = (NvmeRwCmd *)&req->cmd;
+	//struct NvmeNamespace *ns = n->namespaces;
+	//struct NvmeEnduranceGroup *endgrp = ns->endgrp;
+
+	//uint32_t dw12 = le32_to_cpu(req->cmd.cdw12);
+	/* hw/nvme/ctrl.c */
+	//uint8_t dtype = (dw12  >> 20 ) & 0xf;
+	// uint16_t pid = le16_to_cpu(rw->dspec);
+	//uint16_t ph, rg, ruhid;
+	//NvmeReclaimUnit *ru;
+
+	int len = req->nlb;
+	uint64_t lba = req->slba;
+	uint64_t start_lpn = lba / spp->secs_per_pg;
+	uint64_t end_lpn = (lba + len - 1) / spp->secs_per_pg;
+	uint64_t lpn;
+	uint64_t maxlat = 0;
+
+	//if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT ||
+	//	!nvme_parse_pid(ns, pid, &ph, &rg)) {
+	//	ph = 0;	
+	//	rg = 0;
+	//}
+
+	if (end_lpn >= spp->tt_pgs) {
+		ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
+	}
+
+	/* should gc */
+	// while (should_gc_high(ssd)) ...
+
+	for (lpn = start_lpn; lpn <= end_lpn; lpn++) {
+		ppa = get_maptbl_ent(ssd, lpn);
+		if (mapped_ppa(&ppa)) {
+			/* update old page information first */
+			mark_page_invalid(ssd, &ppa);
+			// set_rmap_ent(ssd, INVALID_LPN, &ppa);
+		}
+		
+		//struct nand_cmd swr;
+		//swr.type = USER_IO;
+		//swr.cmd = NAND_WRITE;
+		//swr.stime = req->stime;
+		/* get latency statistics */
+		// curlat = 
+		// maxlat = 
+	}
+
+	return maxlat;
+}
+
 static uint64_t ssd_read(struct ssd *ssd, NvmeRequest *req)
 {
 	struct ssdparams *spp = &ssd->sp;
@@ -395,7 +546,7 @@ static void *ftl_thread(void *arg)
 			ftl_assert(req);
 			switch (req->cmd.opcode) {
 			case NVME_CMD_WRITE:
-				//lat = ssd_write(ssd, req);			
+				lat = ssd_write(n, req);			
 				break;
 			case NVME_CMD_READ:
 				lat = ssd_read(ssd, req);
