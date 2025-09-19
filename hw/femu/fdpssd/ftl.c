@@ -123,8 +123,6 @@ static inline bool valid_ppa(struct ssd *ssd, struct ppa *ppa)
 static void ssd_init_write_pointer(struct ssd *ssd, FemuCtrl *n)
 {
 	struct ssdparams *spp = &ssd->sp;
-	//NvmeNamespace *ns = n->namespaces;
-	//NvmeEnduranceGroup *endgrp = ns->endgrp;
 
 	int i;
 	//int lines_per_ruh;
@@ -428,34 +426,54 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
 }
 
 // FIXME
+static inline void nvme_fdp_stat_inc(uint64_t *a, uint64_t b) 
+{
+	uint64_t ret = *a + b;
+	*a = ret < *a ? UINT64_MAX : ret;
+}
+
+// FIXME
 static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 {
 	struct ssd *ssd = n->ssd;
 	struct ssdparams *spp = &ssd->sp;
 	struct ppa ppa;
-	//NvmeRwCmd *rw = (NvmeRwCmd *)&req->cmd;
-	//struct NvmeNamespace *ns = n->namespaces;
-	//struct NvmeEnduranceGroup *endgrp = ns->endgrp;
+	// NvmeRwCmd *rw = (NvmeRwCmd *)&req->cmd;
+	struct NvmeNamespace *ns = n->namespaces;
+	struct NvmeEnduranceGroup *endgrp = ns->endgrp;
 
-	//uint32_t dw12 = le32_to_cpu(req->cmd.cdw12);
-	/* hw/nvme/ctrl.c */
-	//uint8_t dtype = (dw12  >> 20 ) & 0xf;
-	// uint16_t pid = le16_to_cpu(rw->dspec);
-	//uint16_t ph, rg, ruhid;
-	//NvmeReclaimUnit *ru;
+	uint32_t dw12 = le32_to_cpu(req->cmd.cdw12);
+	uint8_t dtype = (dw12  >> 20 ) & 0xf;
+	//uint16_t pid = le16_to_cpu(rw->dspec);
+	uint16_t pid = (uint16_t) (le32_to_cpu(req->cmd.cdw13) >> 16);
+	uint16_t ph, rg;
+	//NvmeRuHandle *ruh;
 
 	int len = req->nlb;
+	//int open_lun = spp->luns_per_ch / spp->nrg;
+	//int open_line = spp->tt_lines / endgrp->fdp.nruh;
+	//int start_line_pos;
+	//int end_line_pos;
 	uint64_t lba = req->slba;
 	uint64_t start_lpn = lba / spp->secs_per_pg;
 	uint64_t end_lpn = (lba + len - 1) / spp->secs_per_pg;
 	uint64_t lpn;
 	uint64_t maxlat = 0;
 
-	//if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT ||
-	//	!nvme_parse_pid(ns, pid, &ph, &rg)) {
-	//	ph = 0;	
-	//	rg = 0;
-	//}
+	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT ||
+		!nvme_parse_pid(ns, pid, &ph, &rg)) {
+		ph = 0;	
+		rg = 0;
+	}
+
+	// FIXME
+	//start_line_pos = (ph * open_line) % spp->tt_lines;
+	//end_line_pos = ph * open_line - 1;
+
+	// FIXME
+	// update EnduranceGroup hbmw/mbmw 
+	nvme_fdp_stat_inc(&endgrp->fdp.hbmw, req->slba);
+	nvme_fdp_stat_inc(&endgrp->fdp.mbmw, req->slba);
 
 	if (end_lpn >= spp->tt_pgs) {
 		ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
