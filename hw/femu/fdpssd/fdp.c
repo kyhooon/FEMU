@@ -153,7 +153,6 @@ static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
 							uint64_t off, NvmeCmd *cmd)
 {
 	uint16_t ret;
-	uint8_t type;
 	uint8_t *buf = NULL;
 	uint32_t log_size, trans_len;
 	size_t nruh, fdp_descr_size;
@@ -191,8 +190,10 @@ static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
 	
 	hdr->descr_size = cpu_to_le16(fdp_descr_size);
 
-	if( params.ruh_type ==  NVME_RUHT_PERSISTENTLY_ISOLATED )
-		type = NVME_RUHT_PERSISTENTLY_ISOLATED;
+	//if( params.ruh_type ==  NVME_RUHT_PERSISTENTLY_ISOLATED )
+		//type = NVME_RUHT_PERSISTENTLY_ISOLATED;
+	//else 
+		//type = NVME_RUHT_INITIALLY_ISOLATED;
 	
 	/* written to log */
 	if( endgrp->fdp.enabled ) {
@@ -205,7 +206,7 @@ static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
 		hdr->runs = cpu_to_le64(endgrp->fdp.runs);
 
 		for( int i = 0; i < nruh; i++ ) {
-			ruhd->ruht = type;	
+			ruhd->ruht = params.ruh_type;	
 			ruhd++;
 		}
 	} else {

@@ -330,7 +330,7 @@ static bool fdp_ssd_setup(struct ssd *ssd, FemuCtrl *n)
 		ch = &ssd->ch[i];
 		for(j = 0; j < spp->luns_per_ch; j++ ) {
 			lun = &ch->lun[j];
-			pool = &lun->pool[j];
+			pool = lun->pool;
 			pool->open_line = lines_per_ruh;
 		}
 	}
@@ -458,6 +458,7 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	uint64_t start_lpn = lba / spp->secs_per_pg;
 	uint64_t end_lpn = (lba + len - 1) / spp->secs_per_pg;
 	uint64_t lpn;
+	uint64_t written_bytes = 0;
 	uint64_t maxlat = 0;
 
 	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT ||
@@ -472,8 +473,9 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 
 	// FIXME
 	// update EnduranceGroup hbmw/mbmw 
-	nvme_fdp_stat_inc(&endgrp->fdp.hbmw, req->slba);
-	nvme_fdp_stat_inc(&endgrp->fdp.mbmw, req->slba);
+	written_bytes = (uint64_t) len * spp->secsz;
+	nvme_fdp_stat_inc(&endgrp->fdp.hbmw, written_bytes);
+	nvme_fdp_stat_inc(&endgrp->fdp.mbmw, written_bytes);
 
 	if (end_lpn >= spp->tt_pgs) {
 		ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
