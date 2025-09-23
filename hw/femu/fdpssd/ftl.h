@@ -69,6 +69,9 @@ typedef struct line {
 	int id;	// block id
 	int ipc;	// invalid page count in this line
 	int vpc;	// valid page count in this line 
+	QTAILQ_ENTRY(line) entry; /* in either {free,victim,full} list */
+	/* position in the priority queue for victim lines */
+	size_t pos;
 }line;
 
 // FIXME: 
@@ -76,6 +79,16 @@ typedef struct pool {
 	struct line *lines;
 
 	int open_line;
+
+	struct line *active_line;
+	int active_line_wp;
+
+	QTAILQ_HEAD(free_line_list, line) free_line_list;
+	QTAILQ_HEAD(full_line_list, line) full_line_list;
+	pqueue_t *victim_line_pq;
+	
+	int ruh_id;
+	int rg_id;
 
 	int tt_lines;
 	int free_line_cnt;
@@ -211,7 +224,9 @@ struct nand_cmd {
 
 // FIXME:
 struct ssd {
-	struct write_pointer *wp;
+
+	pool *ruh_pool;
+	//struct write_pointer *wp;
 
 	char *ssdname;
 	struct ssdparams sp;
