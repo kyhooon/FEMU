@@ -285,6 +285,7 @@ static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp)
 	
 		ssd_init_nand_lun(&ch->lun[i], spp);
 	}
+
 }
 
 static void ssd_init_maptbl(struct ssd *ssd)

@@ -604,6 +604,21 @@ enum NvmeStatusCodes {
 
 #define NVME_SET_CSI(vec, csi) (vec |= (uint8_t)(1 << (csi)))
 
+// FIXME: RUH Usage 
+typedef struct NvmeRuhStatus {
+	uint8_t rsvd0[14];
+	uint16_t nruhsd;
+} NvmeRuhStatus;
+
+// FIXME: RUH Usage 
+typedef struct NvmeRuhStatusDescr {
+	uint16_t	pid;
+	uint16_t	ruhid;
+	uint32_t	earutr;
+	uint64_t	ruamw;
+	uint8_t		rsvd16[16];
+} NvmeRuhStatusDescr;
+
 // FIXME: fdp support
 enum NvmeDirectiveTypes {
 	NVME_DIRECTIVE_IDENTIFY			= 0x0,

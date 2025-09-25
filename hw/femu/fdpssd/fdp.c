@@ -219,6 +219,54 @@ static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
 	return NVME_SUCCESS;
 } 
 
+// FIXME:
+static uint16_t fdp_ruh_usage(FemuCtrl *n, uint32_t len,
+							uint64_t off, NvmeCmd *cmd) 
+{
+	NvmeNamespace *ns = n->namespaces;
+	NvmeEnduranceGroup *endgrp = ns->endgrp;
+	struct ssd *ssd = n->ssd;
+	size_t nruh;
+	uint32_t log_size, trans_len;
+	uint8_t *buf = NULL;
+	uint16_t ret;
+
+	if (!endgrp->fdp.enabled) {
+		return NVME_FDP_DISABLED | NVME_DNR;
+	}
+
+	nruh = endgrp->fdp.nruh;
+	log_size = sizeof(NvmeRuhStatus) + nruh * sizeof(NvmeRuhStatusDescr);
+
+	if (off >= log_size) {
+		return NVME_INVALID_FIELD | NVME_DNR;
+	}
+
+	trans_len = MIN(log_size - off, len);
+	buf = g_malloc0(log_size);
+	NvmeRuhStatus *ruh_status = (NvmeRuhStatus *)buf;
+	ruh_status->nruhsd = cpu_to_le16(nruh);
+	
+	NvmeRuhStatusDescr *ruhd = (NvmeRuhStatusDescr *)(buf + sizeof(NvmeRuhStatus));
+
+	for (int i = 0; i < nruh; i++) {
+		pool *p = &ssd->ruh_pool[i];
+		ruhd[i].ruhid = cpu_to_le16(i);
+		ruhd[i].earutr = cpu_to_le64(p->free_line_cnt * ssd->sp.secs_per_line);
+		ruhd[i].ruamw = cpu_to_le64(0);
+	}
+
+	ret = fdp_dma_read(n, (uint8_t *)buf + off, trans_len, cmd);
+
+	if (ret) {
+		return ret;
+	}
+
+	g_free(buf);
+	
+	return NVME_SUCCESS;
+}
+
 // FIXME: 
 static uint16_t fdp_get_log(FemuCtrl *n, NvmeCmd *cmd) 
 {
@@ -251,6 +299,8 @@ static uint16_t fdp_get_log(FemuCtrl *n, NvmeCmd *cmd)
 			return fdp_confs(n, len, off, cmd);
 
 		case NVME_LOG_FDP_RUH_USAGE:
+			return fdp_ruh_usage(n, len, off, cmd);
+
 		case NVME_LOG_FDP_EVENTS:
 		default: 
 			return NVME_INVALID_OPCODE | NVME_DNR;
