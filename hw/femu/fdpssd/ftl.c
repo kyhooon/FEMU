@@ -434,8 +434,19 @@ static uint64_t ssd_advance_status(struct ssd *ssd, struct ppa *ppa,
 		lun->next_lun_avail_time = nand_stime + spp->pg_rd_lat;
 		lat = lun->next_lun_avail_time - cmd_stime;
 		break;
+
 	case NAND_WRITE:
+		// FIXME
+		nand_stime = (lun->next_lun_avail_time < cmd_stime) ? cmd_stime : \
+					lun->next_lun_avail_time;
+		if (ncmd->type == USER_IO) {
+			lun->next_lun_avail_time = nand_stime + spp->pg_wr_lat;
+		} else {
+			lun->next_lun_avail_time = nand_stime + spp->pg_wr_lat;
+		}
+		lat = lun->next_lun_avail_time - cmd_stime;
 		break;
+
 	case NAND_ERASE:
 		break;
 	default:
@@ -506,6 +517,10 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 		!nvme_parse_pid(ns, pid, &ph, &rg)) {
 		ph = 0;	
 		rg = 1;
+	}
+
+	if (ph >= spp->nruh || rg >= spp->nrg) {
+		return NVME_INVALID_FIELD | NVME_DNR;
 	}
 
 	pool = &ssd->ruh_pool[ph];
