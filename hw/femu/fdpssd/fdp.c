@@ -190,11 +190,6 @@ static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
 	
 	hdr->descr_size = cpu_to_le16(fdp_descr_size);
 
-	//if( params.ruh_type ==  NVME_RUHT_PERSISTENTLY_ISOLATED )
-		//type = NVME_RUHT_PERSISTENTLY_ISOLATED;
-	//else 
-		//type = NVME_RUHT_INITIALLY_ISOLATED;
-	
 	/* written to log */
 	if( endgrp->fdp.enabled ) {
 		hdr->fdpa = FIELD_DP8(hdr->fdpa, FDPA, VALID, 1);
@@ -231,6 +226,7 @@ static uint16_t fdp_ruh_usage(FemuCtrl *n, uint32_t len,
 	uint8_t *buf = NULL;
 	uint16_t ret;
 
+	// FDP support
 	if (!endgrp->fdp.enabled) {
 		return NVME_FDP_DISABLED | NVME_DNR;
 	}

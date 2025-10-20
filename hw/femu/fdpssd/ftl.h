@@ -65,6 +65,24 @@ enum {
 	PG_VALID = 2
 };
 
+// FIXME:
+typedef struct fdp_ruh {
+	int ruh_id;
+	int rg_id;
+
+	// Write Pointer (->active LUN)
+	struct nand_lun *active_lun;
+	int active_line_id;
+	int active_line_wp;
+
+	NvmeRuHandle *nvme_ruh;
+
+	// RUH Stats
+	uint64_t total_writes;
+	uint64_t total_blocks;
+
+} fdp_ruh;
+
 typedef struct line {
 	int id;	// block id
 	int ipc;	// invalid page count in this line
@@ -224,6 +242,8 @@ struct nand_cmd {
 
 // FIXME:
 struct ssd {
+
+	fdp_ruh *ruhp;	/* RUH pool */
 
 	pool *ruh_pool;
 	//struct write_pointer *wp;

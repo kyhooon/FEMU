@@ -1,11 +1,5 @@
 #include "ftl.h"
 
-// FDP support
-//
-// hw/nvme/ctrl.c
-// nvme_do_write_fdp(NvmeCtrl *n, NvmeRequest *req, uint64_t slba, uint32_t nlb);
-//
-
 static void *ftl_thread(void *arg);
 
 // FIXME
@@ -86,6 +80,12 @@ static inline struct nand_page *get_pg(struct ssd *ssd, struct ppa *ppa)
 {
 	struct nand_block *blk = get_blk(ssd, ppa);
 	return &(blk->pg[ppa->g.pg]);
+}
+
+// FIXME
+static inline void set_maptbl_ent(struct ssd *ssd, uint64_t lpn, struct ppa *ppa)
+{
+	ssd->maptbl[lpn] = *ppa;
 }
 
 static inline struct ppa get_maptbl_ent(struct ssd *ssd, uint64_t lpn) 
@@ -343,40 +343,28 @@ static bool fdp_ssd_setup(struct ssd *ssd, FemuCtrl *n)
 // FIXME
 static void ssd_init_ruh_pools(struct ssd *ssd, FemuCtrl *n) 
 {
+	struct NvmeNamespace *ns = n->namespaces;
+	struct NvmeEnduranceGroup *endgrp = ns->endgrp;
 	struct ssdparams *spp = &ssd->sp;
 	int nruh = spp->nruh;
-	int lines_per_ruh = spp->tt_lines / nruh;
+	//int lines_per_ruh = spp->tt_lines / nruh;
 
-	ssd->ruh_pool = g_malloc0(sizeof(pool) * nruh);
-	
-	// Add log
+	// ssd->ruh_pool = g_malloc0(sizeof(pool) * nruh);
+	ssd->ruhp = g_malloc0(sizeof(fdp_ruh) *nruh);
 	
 	for (int i = 0; i < nruh; i++) {
-		pool *pool = &ssd->ruh_pool[i];
-		pool->ruh_id = i;
-		pool->rg_id = i / (nruh / spp->nrg);
-		pool->tt_lines = spp->tt_lines;
+		fdp_ruh *ruh = &ssd->ruhp[i];
+		ruh->ruh_id = i;
+		ruh->rg_id = i / (nruh / spp->nrg);
 
-		pool->lines = g_malloc0(sizeof(struct line) * lines_per_ruh);
-		
-		QTAILQ_INIT(&pool->free_line_list);
-		QTAILQ_INIT(&pool->full_line_list);
-		pool->victim_line_pq = pqueue_init(lines_per_ruh,
-											victim_line_cmp_pri,
-											victim_line_get_pri,
-											victim_line_set_pri,
-											victim_line_get_pos,
-											victim_line_set_pos);
+		ruh->nvme_ruh = &endgrp->fdp.ruhs[i];
 
-		pool->free_line_cnt = lines_per_ruh;
-		for (int j = 0; j < lines_per_ruh; j++) {
-			struct line *line = &pool->lines[j];
-			line->id = i *lines_per_ruh + j;		
-			line->ipc = 0;
-			line->vpc = 0;
-			QTAILQ_INSERT_TAIL(&pool->free_line_list, line, entry);
-		}
+		ruh->active_lun = NULL;
+		ruh->active_line_id = -1;
+		ruh->active_line_wp = 0;
 		
+		ruh->total_writes = 0;
+		ruh->active_line_wp = 0;
 	}	
 }
 
