@@ -267,7 +267,6 @@ static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp)
 	ch->nluns = spp->luns_per_ch;
 	ch->lun = g_malloc0(sizeof(struct nand_lun) * ch->nluns);
 	for(int i = 0; i < ch->nluns; i++) {
-		//FIXME: 
 		lun = &ch->lun[i];
 		lun->next_lun_avail_time = 0;
 		lun->busy = false;
@@ -280,6 +279,17 @@ static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp)
 		pool->open_line = 0;
 
 		pool->lines = g_malloc0(sizeof(struct line) * pool->tt_lines);
+
+		// FIXME
+		/* pq initilization */
+		QTAILQ_INIT(&pool->free_line_list);
+		QTAILQ_INIT(&pool->full_line_list);
+		pool->victim_line_pq = pqueue_init(spp->lines_per_lun,
+											victim_line_cmp_pri,
+											victim_line_get_pri,
+											victim_line_set_pri,
+											victim_line_get_pos,
+											victim_line_set_pos);
 
 		ssd_init_lines(pool->lines, spp);
 	
@@ -355,7 +365,6 @@ static void ssd_init_ruh_pools(struct ssd *ssd, FemuCtrl *n)
 	for (int i = 0; i < nruh; i++) {
 		fdp_ruh *ruh = &ssd->ruhp[i];
 		ruh->ruh_id = i;
-		ruh->rg_id = i / (nruh / spp->nrg);
 
 		ruh->nvme_ruh = &endgrp->fdp.ruhs[i];
 
@@ -372,9 +381,6 @@ void fdp_ssd_init(FemuCtrl *n)
 {
 	struct ssd *ssd = n->ssd;
 	struct ssdparams *spp = &ssd->sp;
-
-	// FIXME
-	// ftl_assert(ssd);
 
 	ssd_init_params(spp, n);
 	
@@ -395,8 +401,6 @@ void fdp_ssd_init(FemuCtrl *n)
 
 	/* initialize rmap */ 
 	ssd_init_rmap(ssd);
-
-	//ssd_init_write_pointer(ssd, n);
 
 	qemu_thread_create(&ssd->ftl_thread, "FEMU-FTL-Thread", ftl_thread, n, QEMU_THREAD_JOINABLE);
 
@@ -504,17 +508,17 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT ||
 		!nvme_parse_pid(ns, pid, &ph, &rg)) {
 		ph = 0;	
-		rg = 1;
+		rg = 0;
 	}
 
 	if (ph >= spp->nruh || rg >= spp->nrg) {
 		return NVME_INVALID_FIELD | NVME_DNR;
 	}
 
-	pool = &ssd->ruh_pool[ph];
+	fdp_ruh *ruh = &ssd->ruhp[ph];
 	if (pool->rg_id != rg) {
 		ftl_err("RUH %d belongs to RG %d, but request specifies RG %d\n",
-					ph, pool->rg_id, rg);
+					ph, ruh->rg_id, rg);
 	}
 
 	// FIXME
@@ -522,6 +526,8 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	written_bytes = (uint64_t) len * spp->secsz;
 	nvme_fdp_stat_inc(&endgrp->fdp.hbmw, written_bytes);
 	nvme_fdp_stat_inc(&endgrp->fdp.mbmw, written_bytes);
+
+	ruh->total_writes += written_bytes;
 
 	if (end_lpn >= spp->tt_pgs) {
 		ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
@@ -532,19 +538,31 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 
 	for (lpn = start_lpn; lpn <= end_lpn; lpn++) {
 		ppa = get_maptbl_ent(ssd, lpn);
+
 		if (mapped_ppa(&ppa)) {
+			// FIXME
 			/* update old page information first */
 			mark_page_invalid(ssd, &ppa);
 			// set_rmap_ent(ssd, INVALID_LPN, &ppa);
 		}
+
+		// FIXME fdp_get_new_ppa
+		struct ppa new_ppa = fdp_get_new_ppa(ssd, ruh);
+		if (new_ppa == UNMAPPED_PPA) {
+			ftl_err("Failed to allocate PPA for LPN %lu\n", lpn);
+			continue;
+		}
+	
+		ssd->maptbl[lpn] = new_ppa;
+		ssd->rmap[ppa2pgidx(ssd, &new_ppa)] = lpn;
 		
-		//struct nand_cmd swr;
-		//swr.type = USER_IO;
-		//swr.cmd = NAND_WRITE;
-		//swr.stime = req->stime;
-		/* get latency statistics */
-		// curlat = 
-		// maxlat = 
+		// FIXME ssd_advance_status
+		struct nand_cmd swr;
+		swr.type = USER_IO;
+		swr.cmd = NAND_WRITE;
+		swr.stime = req->stime;
+		uint64_t lat = ssd_advance_status(ssd, &new_ppa, &swr);
+		maxlat = (lat > maxlat) ? lat : maxlat;
 	}
 
 	return maxlat;
