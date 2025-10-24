@@ -621,19 +621,6 @@ static bool nvme_init_fdp(FemuCtrl *n)
     return true;
 }
 
-// FIXME
-static bool check_nr_rg(FemuCtrl *n)
-{
-	FdpCtrlParams params = n->fdp_params;
-	int nrg = params.nr_rg;
-
-	if( (nrg != 0 && (nrg & (nrg - 1)) == 0) ) {
-		if( nrg >= 2 && nrg <= 8 )
-			return true;
-	}
-	return false;
-}
-
 static void femu_realize(PCIDevice *pci_dev, Error **errp)
 {
     FemuCtrl *n = FEMU(pci_dev);
@@ -668,8 +655,7 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     nvme_init_namespaces(n, errp);
 
 	// FIXME:
-    if( (n->femu_mode == FEMU_FDPSSD_MODE) 
-					&& check_nr_rg(n) ) {
+    if( n->femu_mode == FEMU_FDPSSD_MODE ) {
         nvme_init_fdp(n);
     }
 

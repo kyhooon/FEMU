@@ -15,6 +15,23 @@ static inline bool nvme_rg_valid(NvmeEnduranceGroup *endgrp, uint16_t rg)
 }
 
 // FIXME
+static uint64_t ppa2pgidx(struct ssd *ssd, struct ppa *ppa)
+{
+    struct ssdparams *spp = &ssd->sp;
+    uint64_t pgidx;
+
+    pgidx = ppa->g.ch  * spp->pgs_per_ch  + \
+            ppa->g.lun * spp->pgs_per_lun + \
+            ppa->g.pl  * spp->pgs_per_pl  + \
+            ppa->g.blk * spp->pgs_per_blk + \
+            ppa->g.pg;
+
+    ftl_assert(pgidx < spp->tt_pgs);
+
+    return pgidx;
+}
+
+// FIXME
 static inline uint16_t nvme_pid2ph(NvmeNamespace *ns, uint16_t pid) 
 {
 	uint16_t rgif = ns->endgrp->fdp.rgif;
@@ -161,11 +178,9 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
 	spp->ch_xfer_lat = n->fdp_params.ch_xfer_lat;
 	/* FDP feature */
 	spp->nru = n->fdp_params.nr_ru;
-	if (n->fdp_params.nr_rg != 2 
-			&& n->fdp_params.nr_rg != 4
-			&& n->fdp_params.nr_rg != 8)
+	if (n->fdp_params.nr_rg != 1) 
 	{
-		ftl_err("invalid RG count %d, only support 2,4,8\n", n->fdp_params.nr_rg);
+		ftl_err("invalid RG count %d, only support 1\n", n->fdp_params.nr_rg);
 		abort();
 	}
 	spp->nrg = n->fdp_params.nr_rg;
@@ -284,7 +299,7 @@ static void ssd_init_ch(struct ssd_channel *ch, struct ssdparams *spp)
 		/* pq initilization */
 		QTAILQ_INIT(&pool->free_line_list);
 		QTAILQ_INIT(&pool->full_line_list);
-		pool->victim_line_pq = pqueue_init(spp->lines_per_lun,
+		pool->victim_line_pq = pqueue_init(spp->blks_per_line,
 											victim_line_cmp_pri,
 											victim_line_get_pri,
 											victim_line_set_pri,
@@ -489,7 +504,6 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	// NvmeRwCmd *rw = (NvmeRwCmd *)&req->cmd;
 	struct NvmeNamespace *ns = n->namespaces;
 	struct NvmeEnduranceGroup *endgrp = ns->endgrp;
-	pool *pool = NULL;
 
 	uint32_t dw12 = le32_to_cpu(req->cmd.cdw12);
 	uint8_t dtype = (dw12  >> 20 ) & 0xf;
@@ -516,10 +530,6 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	}
 
 	fdp_ruh *ruh = &ssd->ruhp[ph];
-	if (pool->rg_id != rg) {
-		ftl_err("RUH %d belongs to RG %d, but request specifies RG %d\n",
-					ph, ruh->rg_id, rg);
-	}
 
 	// FIXME
 	// update EnduranceGroup hbmw/mbmw 
@@ -547,12 +557,11 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 		}
 
 		// FIXME fdp_get_new_ppa
-		struct ppa new_ppa = fdp_get_new_ppa(ssd, ruh);
-		if (new_ppa == UNMAPPED_PPA) {
-			ftl_err("Failed to allocate PPA for LPN %lu\n", lpn);
-			continue;
-		}
+		// struct ppa new_ppa = fdp_get_new_ppa(ssd, ruh);
+		struct ppa new_ppa;
+		new_ppa.ppa = UNMAPPED_PPA;
 	
+		// FIXME ppa2pgidx
 		ssd->maptbl[lpn] = new_ppa;
 		ssd->rmap[ppa2pgidx(ssd, &new_ppa)] = lpn;
 		

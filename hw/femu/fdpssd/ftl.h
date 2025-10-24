@@ -68,7 +68,6 @@ enum {
 // FIXME:
 typedef struct fdp_ruh {
 	int ruh_id;
-	int rg_id;
 
 	// Write Pointer (->active LUN)
 	struct nand_lun *active_lun;
