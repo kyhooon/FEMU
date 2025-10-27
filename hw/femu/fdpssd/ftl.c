@@ -374,7 +374,6 @@ static void ssd_init_ruh_pools(struct ssd *ssd, FemuCtrl *n)
 	int nruh = spp->nruh;
 	//int lines_per_ruh = spp->tt_lines / nruh;
 
-	// ssd->ruh_pool = g_malloc0(sizeof(pool) * nruh);
 	ssd->ruhp = g_malloc0(sizeof(fdp_ruh) *nruh);
 	
 	for (int i = 0; i < nruh; i++) {
@@ -522,10 +521,10 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT ||
 		!nvme_parse_pid(ns, pid, &ph, &rg)) {
 		ph = 0;	
-		rg = 0;
+		rg = 1;
 	}
 
-	if (ph >= spp->nruh || rg >= spp->nrg) {
+	if (ph >= spp->nruh) {
 		return NVME_INVALID_FIELD | NVME_DNR;
 	}
 
