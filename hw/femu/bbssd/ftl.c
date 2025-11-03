@@ -710,6 +710,9 @@ static void clean_one_block(struct ssd *ssd, struct ppa *ppa)
             /* delay the maptbl update until "write" happens */
             gc_write_page(ssd, ppa);
             cnt++;
+
+			/* WAF */
+			GCWrite += 1;
         }
     }
 
@@ -859,6 +862,9 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
         /* get latency statistics */
         curlat = ssd_advance_status(ssd, &ppa, &swr);
         maxlat = (curlat > maxlat) ? curlat : maxlat;
+
+		/* WAF */
+		hostWrite += 1;
     }
 
     return maxlat;
@@ -956,13 +962,18 @@ static void *ftl_thread(void *arg)
     int rc;
     int i;
 
-	int64_t start_time_ms = 0;
+	//int64_t start_time_ms = 0;
+	struct timespec start_time;
 
 	/* WAF */
-	WAFData = fopen("WAFData.csv", "w");
+	WAFData = fopen("/home/cpslab/WAFData.csv", "w");
+	if (WAFData == NULL)  {
+		ftl_err("Failed to open WAFData.csv\n");
+	}
 	fprintf(WAFData, "time(s), WAF\n");
 
-	start_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+	//start_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+	clock_gettime(CLOCK_MONOTONIC, &start_time);
 
     while (!*(ssd->dataplane_started_ptr)) {
         usleep(100000);
@@ -1008,16 +1019,24 @@ static void *ftl_thread(void *arg)
                 ftl_err("FTL to_poller enqueue failed\n");
             }
 
-			int64_t current_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-			int64_t timestamp = current_time_ms - start_time_ms;
+			//int64_t current_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+			//int64_t timestamp = current_time_ms - start_time_ms;
 
-			if (timestamp >= 10000) {
+			struct timespec current_time;
+			clock_gettime(CLOCK_MONOTONIC, &current_time);
+			time_t raw_time = time(NULL);
+			char *timeStamp = ctime(&raw_time);
+
+			if (current_time.tv_sec - start_time.tv_sec > 10) {
 
 				WAF = (hostWrite) > 0 ? (double) (hostWrite + GCWrite) / hostWrite : 0;
 				
-				double elapsed_sec = (double) timestamp / 1000.0;		
-
-				fprintf(WAFData, "%.6f,%.5f\n", elapsed_sec, WAF);
+				fprintf(WAFData, "%.15s,%.5f\n", timeStamp + 6, WAF);
+			
+				hostWrite = 0;
+				GCWrite = 0;
+				
+				start_time = current_time;
 			}
 
             /* clean one line if needed (in the background) */
