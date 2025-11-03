@@ -7,6 +7,12 @@
 #define INVALID_LPN     (~(0ULL))
 #define UNMAPPED_PPA    (~(0ULL))
 
+/* <THRESHOLD>:
+ * Default: UINT64_MAX -> 2^31-1
+ * 
+*/
+#define THRESHOLD UINT64_MAX
+
 enum {
     NAND_READ =  0,
     NAND_WRITE = 1,
@@ -200,7 +206,13 @@ struct ssd {
     struct ssd_channel *ch;
     struct ppa *maptbl; /* page level mapping table */
     uint64_t *rmap;     /* reverse mapptbl, assume it's stored in OOB */
-    struct write_pointer wp;
+
+	struct write_pointer wp;
+	
+	/* hot / cold write pointer */
+    //struct write_pointer hwp;
+	//struct write_pointer cwp;
+
     struct line_mgmt lm;
 
     /* lockless ring for communication with NVMe IO thread */

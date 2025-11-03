@@ -2,6 +2,12 @@
 
 //#define FEMU_DEBUG_FTL
 
+/* WAF */ 
+static unsigned int hostWrite = 0;
+static unsigned int GCWrite = 0;
+static double WAF = 0;
+static FILE *WAFData;
+
 static void *ftl_thread(void *arg);
 
 static inline bool should_gc(struct ssd *ssd)
@@ -950,6 +956,14 @@ static void *ftl_thread(void *arg)
     int rc;
     int i;
 
+	int64_t start_time_ms = 0;
+
+	/* WAF */
+	WAFData = fopen("WAFData.csv", "w");
+	fprintf(WAFData, "time(s), WAF\n");
+
+	start_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+
     while (!*(ssd->dataplane_started_ptr)) {
         usleep(100000);
     }
@@ -994,12 +1008,26 @@ static void *ftl_thread(void *arg)
                 ftl_err("FTL to_poller enqueue failed\n");
             }
 
+			int64_t current_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+			int64_t timestamp = current_time_ms - start_time_ms;
+
+			if (timestamp >= 10000) {
+
+				WAF = (hostWrite) > 0 ? (double) (hostWrite + GCWrite) / hostWrite : 0;
+				
+				double elapsed_sec = (double) timestamp / 1000.0;		
+
+				fprintf(WAFData, "%.6f,%.5f\n", elapsed_sec, WAF);
+			}
+
             /* clean one line if needed (in the background) */
             if (should_gc(ssd)) {
                 do_gc(ssd, false);
             }
         }
     }
+
+	fclose(WAFData);
 
     return NULL;
 }
