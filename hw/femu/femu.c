@@ -681,6 +681,8 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("ch_xfer_lat", FemuCtrl, bb_params.ch_xfer_lat, 0),
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
+	/* lpnCount Threshold */
+	DEFINE_PROP_INT32("threshold", FemuCtrl, bb_params.lpn_threshold, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 

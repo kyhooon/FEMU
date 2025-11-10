@@ -8,6 +8,9 @@ static unsigned int GCWrite = 0;
 static double WAF = 0;
 static FILE *WAFData;
 
+/* lpn access count */
+//static FILE *accessCount;
+
 static void *ftl_thread(void *arg);
 
 static inline bool should_gc(struct ssd *ssd)
@@ -110,32 +113,55 @@ static void ssd_init_lines(struct ssd *ssd)
         line->ipc = 0;
         line->vpc = 0;
         line->pos = 0;
+
+		/* hot/cold line count */
+		line->is_hot = 0;
         /* initialize all the lines as free lines */
         QTAILQ_INSERT_TAIL(&lm->free_line_list, line, entry);
         lm->free_line_cnt++;
     }
+
+	/* hot/cold count */
+	lm->hline_count = 0;
+	lm->cline_count = 0;
 
     ftl_assert(lm->free_line_cnt == lm->tt_lines);
     lm->victim_line_cnt = 0;
     lm->full_line_cnt = 0;
 }
 
-static void ssd_init_write_pointer(struct ssd *ssd)
+static void ssd_init_write_pointer(struct ssd *ssd, bool state)
 {
-    struct write_pointer *wpp = &ssd->wp;
     struct line_mgmt *lm = &ssd->lm;
     struct line *curline = NULL;
+
+	/* hot/cold */
+	struct write_pointer *wpp = NULL;
+	if (!state)
+		wpp = &ssd->cwp;
+	else 
+		wpp = &ssd->hwp;
 
     curline = QTAILQ_FIRST(&lm->free_line_list);
     QTAILQ_REMOVE(&lm->free_line_list, curline, entry);
     lm->free_line_cnt--;
+
+	/* hot/cold line state */
+	if (state) { 
+		curline->is_hot = 1;
+		lm->hline_count++;
+	}
+	else {
+		curline->is_hot = 2;
+		lm->cline_count++;
+	}
 
     /* wpp->curline is always our next-to-write super-block */
     wpp->curline = curline;
     wpp->ch = 0;
     wpp->lun = 0;
     wpp->pg = 0;
-    wpp->blk = 0;
+    wpp->blk = wpp->curline->id;
     wpp->pl = 0;
 }
 
@@ -160,64 +186,80 @@ static struct line *get_next_free_line(struct ssd *ssd)
     return curline;
 }
 
-static void ssd_advance_write_pointer(struct ssd *ssd)
+static void ssd_advance_write_pointer(struct ssd *ssd, bool is_hot)
 {
-    struct ssdparams *spp = &ssd->sp;
-    struct write_pointer *wpp = &ssd->wp;
-    struct line_mgmt *lm = &ssd->lm;
+	struct ssdparams *spp = &ssd->sp;
+	struct line_mgmt *lm = &ssd->lm;
 
-    check_addr(wpp->ch, spp->nchs);
-    wpp->ch++;
-    if (wpp->ch == spp->nchs) {
-        wpp->ch = 0;
-        check_addr(wpp->lun, spp->luns_per_ch);
-        wpp->lun++;
-        /* in this case, we should go to next lun */
-        if (wpp->lun == spp->luns_per_ch) {
-            wpp->lun = 0;
-            /* go to next page in the block */
-            check_addr(wpp->pg, spp->pgs_per_blk);
-            wpp->pg++;
-            if (wpp->pg == spp->pgs_per_blk) {
-                wpp->pg = 0;
-                /* move current line to {victim,full} line list */
-                if (wpp->curline->vpc == spp->pgs_per_line) {
-                    /* all pgs are still valid, move to full line list */
-                    ftl_assert(wpp->curline->ipc == 0);
-                    QTAILQ_INSERT_TAIL(&lm->full_line_list, wpp->curline, entry);
-                    lm->full_line_cnt++;
-                } else {
-                    ftl_assert(wpp->curline->vpc >= 0 && wpp->curline->vpc < spp->pgs_per_line);
-                    /* there must be some invalid pages in this line */
-                    ftl_assert(wpp->curline->ipc > 0);
-                    pqueue_insert(lm->victim_line_pq, wpp->curline);
-                    lm->victim_line_cnt++;
-                }
-                /* current line is used up, pick another empty line */
-                check_addr(wpp->blk, spp->blks_per_pl);
-                wpp->curline = NULL;
-                wpp->curline = get_next_free_line(ssd);
-                if (!wpp->curline) {
-                    /* TODO */
-                    abort();
-                }
-                wpp->blk = wpp->curline->id;
-                check_addr(wpp->blk, spp->blks_per_pl);
-                /* make sure we are starting from page 0 in the super block */
-                ftl_assert(wpp->pg == 0);
-                ftl_assert(wpp->lun == 0);
-                ftl_assert(wpp->ch == 0);
-                /* TODO: assume # of pl_per_lun is 1, fix later */
-                ftl_assert(wpp->pl == 0);
-            }
-        }
-    }
+	struct write_pointer *wpp = is_hot ? &ssd->hwp : &ssd->cwp;
+
+	check_addr(wpp->ch, spp->nchs);
+	wpp->ch++;
+	if (wpp->ch == spp->nchs) {
+		wpp->ch = 0;
+		check_addr(wpp->lun, spp->luns_per_ch);
+		wpp->lun++;
+		/* in this case, we should go to next lun */
+		if (wpp->lun == spp->luns_per_ch) {
+			wpp->lun = 0;
+			/* go to next page in the block */
+			check_addr(wpp->pg, spp->pgs_per_blk);
+			wpp->pg++;
+			if (wpp->pg == spp->pgs_per_blk) {
+				wpp->pg = 0;
+				/* move current line to {victim,full} line list */
+				if (wpp->curline->vpc == spp->pgs_per_line) {
+					/* all pgs are still valid, move to full line list */
+					ftl_assert(wpp->curline->ipc == 0);
+					QTAILQ_INSERT_TAIL(&lm->full_line_list, wpp->curline, entry);
+					lm->full_line_cnt++;
+
+				} else {
+					ftl_assert(wpp->curline->vpc >= 0 && wpp->curline->vpc < spp->pgs_per_line);
+					/* there must be some invalid pages in this line */
+					ftl_assert(wpp->curline->ipc > 0);
+					pqueue_insert(lm->victim_line_pq, wpp->curline);
+					lm->victim_line_cnt++;
+
+				}
+			
+				/* current line is used up, pick another empty line */
+				check_addr(wpp->blk, spp->blks_per_pl);
+				wpp->curline = NULL;
+				wpp->curline = get_next_free_line(ssd);
+				if (!wpp->curline) {
+					/* TODO */
+					abort();
+				}
+
+				/* hot/cold line count */
+				if (is_hot) {
+					wpp->curline->is_hot = 1;
+					lm->hline_count++;
+				} else {
+					wpp->curline->is_hot = 2;
+					lm->cline_count++;
+				}	
+
+				wpp->blk = wpp->curline->id;
+				check_addr(wpp->blk, spp->blks_per_pl);
+				/* make sure we are starting from page 0 in the super block */
+				ftl_assert(wpp->pg == 0);
+				ftl_assert(wpp->lun == 0);
+				ftl_assert(wpp->ch == 0);
+				/* TODO: assume # of pl_per_lun is 1, fix later */
+				ftl_assert(wpp->pl == 0);
+			}
+		}
+	}
 }
 
-static struct ppa get_new_page(struct ssd *ssd)
+static struct ppa get_new_page(struct ssd *ssd, bool is_hot)
 {
-    struct write_pointer *wpp = &ssd->wp;
     struct ppa ppa;
+
+    struct write_pointer *wpp = is_hot ? &ssd->hwp : &ssd->cwp;
+
     ppa.ppa = 0;
     ppa.g.ch = wpp->ch;
     ppa.g.lun = wpp->lun;
@@ -288,6 +330,8 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
     spp->gc_thres_lines_high = (int)((1 - spp->gc_thres_pcent_high) * spp->tt_lines);
     spp->enable_gc_delay = true;
 
+	/* lpnCount Threshold */
+	spp->lpn_threshold = n->bb_params.lpn_threshold;
 
     check_params(spp);
 }
@@ -366,6 +410,30 @@ static void ssd_init_rmap(struct ssd *ssd)
     }
 }
 
+static bool is_hot_data(struct ssd *ssd, uint64_t lpn) 
+{
+	struct ssdparams *spp = &ssd->sp;
+
+	//if (ssd->lpnCount[lpn] > 7) {
+		//femu_log("lpnCount[%lu] = %lu, lpn_threshold = %d\n", lpn, ssd->lpnCount[lpn], spp->lpn_threshold);
+	//}
+
+	if (ssd->lpnCount[lpn] >= spp->lpn_threshold)
+		return true;
+
+	return false;
+}
+
+static void ssd_init_lpn_tracking(struct ssd *ssd)
+{
+	struct ssdparams *spp = &ssd->sp;
+
+	ssd->lpnCount = g_malloc0(sizeof(uint64_t) * spp->tt_pgs);
+	
+	for (int i = 0; i < spp->tt_pgs; i++)
+		ssd->lpnCount[i] = 0;
+}
+
 void ssd_init(FemuCtrl *n)
 {
     struct ssd *ssd = n->ssd;
@@ -387,11 +455,16 @@ void ssd_init(FemuCtrl *n)
     /* initialize rmap */
     ssd_init_rmap(ssd);
 
+	/* hot/cold */
+	ssd_init_lpn_tracking(ssd);
+
     /* initialize all the lines */
     ssd_init_lines(ssd);
 
+	/* hot/cold */
     /* initialize write pointer, this is how we allocate new pages for writes */
-    ssd_init_write_pointer(ssd);
+    ssd_init_write_pointer(ssd, true);
+    ssd_init_write_pointer(ssd, false);
 
     qemu_thread_create(&ssd->ftl_thread, "FEMU-FTL-Thread", ftl_thread, n,
                        QEMU_THREAD_JOINABLE);
@@ -639,8 +712,14 @@ static uint64_t gc_write_page(struct ssd *ssd, struct ppa *old_ppa)
     struct nand_lun *new_lun;
     uint64_t lpn = get_rmap_ent(ssd, old_ppa);
 
+	bool is_hot;
+
     ftl_assert(valid_lpn(ssd, lpn));
-    new_ppa = get_new_page(ssd);
+
+	/* hot/cold */
+	is_hot = is_hot_data(ssd, lpn);
+    new_ppa = get_new_page(ssd, is_hot);
+
     /* update maptbl */
     set_maptbl_ent(ssd, lpn, &new_ppa);
     /* update rmap */
@@ -648,8 +727,9 @@ static uint64_t gc_write_page(struct ssd *ssd, struct ppa *old_ppa)
 
     mark_page_valid(ssd, &new_ppa);
 
+	/* hot/cold */
     /* need to advance the write pointer here */
-    ssd_advance_write_pointer(ssd);
+    ssd_advance_write_pointer(ssd, is_hot);
 
     if (ssd->sp.enable_gc_delay) {
         struct nand_cmd gcw;
@@ -725,6 +805,15 @@ static void mark_line_free(struct ssd *ssd, struct ppa *ppa)
     struct line *line = get_line(ssd, ppa);
     line->ipc = 0;
     line->vpc = 0;
+
+	/* hot/cold line count */
+	if (line->is_hot == 1) {
+		lm->hline_count--;
+	} else if (line->is_hot == 2) {
+		lm->cline_count--;
+	}
+	line->is_hot = 0;
+
     /* move this line to free line list */
     QTAILQ_INSERT_TAIL(&lm->free_line_list, line, entry);
     lm->free_line_cnt++;
@@ -823,6 +912,7 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
     uint64_t lpn;
     uint64_t curlat = 0, maxlat = 0;
     int r;
+	bool is_hot;
 
     if (end_lpn >= spp->tt_pgs) {
         ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
@@ -836,6 +926,7 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
     }
 
     for (lpn = start_lpn; lpn <= end_lpn; lpn++) {
+
         ppa = get_maptbl_ent(ssd, lpn);
         if (mapped_ppa(&ppa)) {
             /* update old page information first */
@@ -843,8 +934,11 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
             set_rmap_ent(ssd, INVALID_LPN, &ppa);
         }
 
+		is_hot = is_hot_data(ssd, lpn);
+
+		/* hot/cold */
         /* new write */
-        ppa = get_new_page(ssd);
+        ppa = get_new_page(ssd, is_hot);
         /* update maptbl */
         set_maptbl_ent(ssd, lpn, &ppa);
         /* update rmap */
@@ -853,7 +947,7 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
         mark_page_valid(ssd, &ppa);
 
         /* need to advance the write pointer here */
-        ssd_advance_write_pointer(ssd);
+        ssd_advance_write_pointer(ssd, is_hot);
 
         struct nand_cmd swr;
         swr.type = USER_IO;
@@ -865,6 +959,9 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
 
 		/* WAF */
 		hostWrite += 1;
+
+		/* access count + 1 */
+		ssd->lpnCount[start_lpn] += 1;
     }
 
     return maxlat;
@@ -961,19 +1058,18 @@ static void *ftl_thread(void *arg)
     uint64_t lat = 0;
     int rc;
     int i;
+	bool is_first = false;
 
-	//int64_t start_time_ms = 0;
-	struct timespec start_time;
+	uint64_t start_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
 
 	/* WAF */
 	WAFData = fopen("/home/cpslab/WAFData.csv", "w");
 	if (WAFData == NULL)  {
 		ftl_err("Failed to open WAFData.csv\n");
 	}
-	fprintf(WAFData, "time(s), WAF\n");
+	fprintf(WAFData, "time(s), WAF\n");	
 
-	//start_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-	clock_gettime(CLOCK_MONOTONIC, &start_time);
+	
 
     while (!*(ssd->dataplane_started_ptr)) {
         usleep(100000);
@@ -1022,19 +1118,36 @@ static void *ftl_thread(void *arg)
 			//int64_t current_time_ms = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 			//int64_t timestamp = current_time_ms - start_time_ms;
 
-			struct timespec current_time;
-			clock_gettime(CLOCK_MONOTONIC, &current_time);
-			time_t raw_time = time(NULL);
-			char *timeStamp = ctime(&raw_time);
+			uint64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+			uint64_t timestamp = current_time - start_time;
 
-			if (current_time.tv_sec - start_time.tv_sec > 10) {
+			if (timestamp >= 1000000000ULL) {
 
-				WAF = (hostWrite) > 0 ? (double) (hostWrite + GCWrite) / hostWrite : 0;
+				WAF = hostWrite > 0 ? (double) (hostWrite + GCWrite) / (double) hostWrite : 0;
+
+				//double runtime = (double) (current_time - start_time) / 1000000000.0;
+				double current = (double) current_time / 1000000000.0; 
+
+				if (!is_first) {
+					femu_log("fio workload timestamp: %7.2f\n", current);
+					is_first = true;
+				}
 				
-				fprintf(WAFData, "%.15s,%.5f\n", timeStamp + 6, WAF);
-			
-				hostWrite = 0;
-				GCWrite = 0;
+				/* lpn access count */
+				//accessCount = fopen("/home/cpslab/lpnCount.csv", "w");
+				//if (accessCount == NULL)  {
+					//ftl_err("Failed to open lpnCount.csv\n");
+				//}
+				//for (uint64_t j = 0; j < ssd->sp.tt_pgs; j++)
+					//fprintf(accessCount, "%7lu, %7lu\n", j, ssd->lpnCount[j]);
+				//fflush(accessCount);
+				//fclose(accessCount);
+				
+				/* WAF */
+				fprintf(WAFData, "%7.2f,%9u,%9u,%8.5f,%3d,%3d\n", current, hostWrite, GCWrite, WAF, ssd->lm.hline_count, ssd->lm.cline_count);
+				fflush(WAFData);
+				
+				memset(ssd->lpnCount, 0, ssd->sp.tt_pgs * sizeof(uint64_t));
 				
 				start_time = current_time;
 			}

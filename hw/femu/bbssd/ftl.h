@@ -7,12 +7,6 @@
 #define INVALID_LPN     (~(0ULL))
 #define UNMAPPED_PPA    (~(0ULL))
 
-/* <THRESHOLD>:
- * Default: UINT64_MAX -> 2^31-1
- * 
-*/
-#define THRESHOLD UINT64_MAX
-
 enum {
     NAND_READ =  0,
     NAND_WRITE = 1,
@@ -160,6 +154,9 @@ struct ssdparams {
     int tt_pls;       /* total # of planes in the SSD */
 
     int tt_luns;      /* total # of LUNs in the SSD */
+
+	/* lpnCount Threshold */
+	int lpn_threshold;
 };
 
 typedef struct line {
@@ -169,6 +166,9 @@ typedef struct line {
     QTAILQ_ENTRY(line) entry; /* in either {free,victim,full} list */
     /* position in the priority queue for victim lines */
     size_t                  pos;
+
+	/* hot/cold line count */
+	int is_hot;		/* free = 0, hot = 1, cold = 2 */
 } line;
 
 /* wp: record next write addr */
@@ -192,6 +192,10 @@ struct line_mgmt {
     int free_line_cnt;
     int victim_line_cnt;
     int full_line_cnt;
+	
+	/* hot/cold line count */
+	int hline_count;
+	int cline_count;
 };
 
 struct nand_cmd {
@@ -206,12 +210,10 @@ struct ssd {
     struct ssd_channel *ch;
     struct ppa *maptbl; /* page level mapping table */
     uint64_t *rmap;     /* reverse mapptbl, assume it's stored in OOB */
-
-	struct write_pointer wp;
 	
 	/* hot / cold write pointer */
-    //struct write_pointer hwp;
-	//struct write_pointer cwp;
+    struct write_pointer hwp;
+	struct write_pointer cwp;
 
     struct line_mgmt lm;
 
@@ -220,6 +222,9 @@ struct ssd {
     struct rte_ring **to_poller;
     bool *dataplane_started_ptr;
     QemuThread ftl_thread;
+
+	/* hot/cold */
+	uint64_t *lpnCount;
 };
 
 void ssd_init(FemuCtrl *n);

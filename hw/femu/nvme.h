@@ -1168,6 +1168,9 @@ typedef struct BbCtrlParams {
 
     int gc_thres_pcent;
     int gc_thres_pcent_high;
+
+	/* lpnCount Threshold */
+	int lpn_threshold;
 } BbCtrlParams;
 
 typedef struct ZNSCtrlParams {
