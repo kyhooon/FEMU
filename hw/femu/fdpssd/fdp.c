@@ -220,6 +220,7 @@ static uint16_t fdp_ruh_usage(FemuCtrl *n, uint32_t len,
 {
 	NvmeNamespace *ns = n->namespaces;
 	NvmeEnduranceGroup *endgrp = ns->endgrp;
+	//struct NvmeRuHandle *ruh = NULL;
 	struct ssd *ssd = n->ssd;
 	size_t nruh;
 	uint32_t log_size, trans_len;
@@ -246,9 +247,10 @@ static uint16_t fdp_ruh_usage(FemuCtrl *n, uint32_t len,
 	NvmeRuhStatusDescr *ruhd = (NvmeRuhStatusDescr *)(buf + sizeof(NvmeRuhStatus));
 
 	for (int i = 0; i < nruh; i++) {
-		pool *p = &ssd->ruh_pool[i];
+		//ruh = &ssd->ruhs[i];
 		ruhd[i].ruhid = cpu_to_le16(i);
-		ruhd[i].earutr = cpu_to_le64(p->free_line_cnt * ssd->sp.secs_per_line);
+		// FIXME
+		ruhd[i].earutr = cpu_to_le64(ssd->lm.free_line_cnt * ssd->sp.secs_per_line);
 		ruhd[i].ruamw = cpu_to_le64(0);
 	}
 

@@ -65,23 +65,6 @@ enum {
 	PG_VALID = 2
 };
 
-// FIXME:
-typedef struct fdp_ruh {
-	int ruh_id;
-
-	// Write Pointer (->active LUN)
-	struct nand_lun *active_lun;
-	int active_line_id;
-	int active_line_wp;
-
-	NvmeRuHandle *nvme_ruh;
-
-	// RUH Stats
-	uint64_t total_writes;
-	uint64_t total_blocks;
-
-} fdp_ruh;
-
 typedef struct line {
 	int id;	// block id
 	int ipc;	// invalid page count in this line
@@ -89,29 +72,11 @@ typedef struct line {
 	QTAILQ_ENTRY(line) entry; /* in either {free,victim,full} list */
 	/* position in the priority queue for victim lines */
 	size_t pos;
+
+	// FIXME
+	int ruht;	/* init = 0, ii = 1, pi = 2 */
+	int ruhid;	/* init = -1, */
 }line;
-
-// FIXME: 
-typedef struct pool {
-	struct line *lines;
-
-	int open_line;
-
-	struct line *active_line;
-	int active_line_wp;
-
-	QTAILQ_HEAD(free_line_list, line) free_line_list;
-	QTAILQ_HEAD(full_line_list, line) full_line_list;
-	pqueue_t *victim_line_pq;
-	
-	int ruh_id;
-	int rg_id;
-
-	int tt_lines;
-	int free_line_cnt;
-	int victim_line_cnt;
-	int full_line_cnt;
-} pool;
 
 typedef int nand_sec_status_t;
 
@@ -127,18 +92,16 @@ struct nand_block {
 	int ipc; /* invalid page count */
 	int vpc; /* valid page count */
 	int erase_cnt;
+	int wp; /* current write pointer */
 };
 
 struct nand_plane {
 	struct nand_block *blk;
 	int nblks;
-	uint64_t next_lun_avail_time;
-	bool busy;
-	uint64_t gc_endtime;
 };
 
 struct nand_lun {
-	pool *pool;
+	//pool *pool;
 	struct nand_plane *pl;
 	int npls;
 	uint64_t next_lun_avail_time;
@@ -149,6 +112,9 @@ struct nand_lun {
 struct ssd_channel {
 	struct nand_lun *lun;
 	int nluns;
+	uint64_t next_ch_avail_time;
+	bool busy;
+	uint64_t gc_endtime;
 };
 
 struct ssdparams {
@@ -214,19 +180,18 @@ struct write_pointer {
 	int pg;
 	int blk;
 	int pl;
-	
-	// FDP
-	int ruh_id;
-	int rg_id;
+
+	/* ruh type */
+	int type;	/* ii = 1, pi = 2 */
 };
 
-// FIXME:
 struct line_mgmt {
 	struct line *lines;
-
-	// QTAILQ_HEAD(free_line_list, line) free_line_list;
-	// QTAILQ_HEAD(full_line_list, line) full_line_list;
-
+	/* free line list, we only need to maintain a list of blk numbers */
+	QTAILQ_HEAD(free_line_list, line) free_line_list;
+	pqueue_t *victim_line_pq;
+	//QTAILQ_HEAD(victim_line_list, line) victim_line_list;
+	QTAILQ_HEAD(full_line_list, line) full_line_list;
 	int tt_lines;
 	int free_line_cnt;
 	int victim_line_cnt;
@@ -239,13 +204,9 @@ struct nand_cmd {
 	int64_t stime;	/* Coperd: request arrival time */
 };
 
-// FIXME:
 struct ssd {
 
-	fdp_ruh *ruhp;	/* RUH pool */
-
-	pool *ruh_pool;
-	//struct write_pointer *wp;
+	NvmeRuHandle *ruhs;
 
 	char *ssdname;
 	struct ssdparams sp;
@@ -254,9 +215,20 @@ struct ssd {
 	uint64_t *rmap;	/* reverse mapptbl, assume it's stored in OOB */
 	bool *dataplane_started_ptr;
 
+	/* II, PI write pointer */
+	struct write_pointer *wp;
+	/* ruh_index <-> wp_index mapping */
+	int *ruhmap;
+
+	struct line_mgmt lm;
+
 	/* lockless ring for communication with NVMe IO thread */
 	struct rte_ring **to_ftl;
 	struct rte_ring **to_poller;
+
+	/* WAF */
+	uint64_t hostWrite;
+	uint64_t GCWrite;
 
 	QemuThread ftl_thread;
 };
