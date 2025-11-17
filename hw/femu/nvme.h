@@ -55,6 +55,14 @@ REG32(FEAT_FDP, 0x0)
 	FIELD(FEAT_FDP, FDPE, 0, 1)
 	FIELD(FEAT_FDP, CONF_NDX, 8, 8);
 
+// FIXME: nvme_io_mgmt_recv
+enum NvmeIomr2Mo {
+    NVME_IOMR_MO_NOP = 0x0,
+    NVME_IOMR_MO_RUH_STATUS = 0x1,
+    NVME_IOMR_MO_VENDOR_SPECIFIC = 0x255,
+};
+
+
 typedef struct NvmeBar {
         uint64_t    cap;
 	uint32_t    vs;
@@ -354,6 +362,7 @@ enum NvmeAdminCommands {
 	NVME_ADM_CMD_FEMU_FLIP      = 0xef,
 };
 
+// FIXME : I/O Mgmt support
 enum NvmeIoCommands {
 	NVME_CMD_FLUSH              = 0x00,
 	NVME_CMD_WRITE              = 0x01,
@@ -368,6 +377,8 @@ enum NvmeIoCommands {
 	NVME_CMD_OC_ERASE           = 0x90,
 	NVME_CMD_OC_WRITE           = 0x91,
 	NVME_CMD_OC_READ            = 0x92,
+	NVME_CMD_IO_MGMT_SEND		= 0x1d,
+	NVME_CMD_IO_MGMT_RECV		= 0x12,
 };
 
 typedef struct NvmeDeleteQ {

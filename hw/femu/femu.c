@@ -585,18 +585,19 @@ static bool nvme_init_fdp(FemuCtrl *n)
 	NvmeNamespace *ns = n->namespaces;
 	unsigned int i;
 	uint8_t lbafi = NVME_ID_NS_FLBAS_INDEX(ns->id_ns.flbas);
+	uint16_t *ph;
 
 	/* initialize Endurance Group */
 	nvme_init_endgrp(n);
 
 	/* namespace -> fdp.nphs, fdp.phs */
 	/* Placement Handles == Reclaim Unit Handle */
-	ns->fdp.phs = g_malloc0(sizeof(uint16_t) * n->fdp_params.nr_ruh);
+	ph = ns->fdp.phs = g_malloc0(sizeof(uint16_t) * n->fdp_params.nr_ruh);
 	ns->fdp.nphs = n->fdp_params.nr_ruh;
 
 	// FIXME:
 	endgrp = ns->endgrp;
-	for( i = 0; i < ns->fdp.nphs; i++ ) {
+	for( i = 0; i < ns->fdp.nphs; i++,ph++) {
 		ruh = &endgrp->fdp.ruhs[i];
 
 		switch (ruh->ruha) {
@@ -616,6 +617,7 @@ static bool nvme_init_fdp(FemuCtrl *n)
 		default: 
 			abort();
 		}
+		*ph = i;
 	}
 
     return true;

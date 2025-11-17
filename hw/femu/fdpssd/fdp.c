@@ -73,6 +73,16 @@ static void fdp_flip(FemuCtrl *n, NvmeCmd *cmd)
 	}
 }
 
+// FIXME: 
+static uint16_t fdp_dma_read(FemuCtrl *n, uint8_t *ptr, 
+							uint32_t len, NvmeCmd *cmd) 
+{
+	uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
+	uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
+	
+	return dma_read_prp(n, ptr, len, prp1, prp2);
+}
+
 // FIXME:
 static uint16_t fdp_admin_cmd(FemuCtrl *n, NvmeCmd *cmd)
 {
@@ -92,6 +102,86 @@ static uint16_t fdp_nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
 	return nvme_rw(n, ns, cmd, req);
 }
 
+static inline uint16_t nvme_make_pid(NvmeNamespace *ns, uint16_t rg, uint16_t ph) 
+{
+	uint16_t rgif = ns->endgrp->fdp.rgif;
+	
+	if (!rgif) {
+		return ph;
+	}
+
+	return (rg << (16 - rgif)) | ph;
+}
+
+// FIXME : nvme fdp status
+static uint16_t nvme_io_mgmt_recv_ruhs(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, size_t len) 
+{
+	unsigned int nruhsd;
+	uint16_t rg, ph, *ruhid;
+	uint16_t ret;
+	size_t trans_len;
+	uint8_t *buf = NULL;
+	NvmeEnduranceGroup *endgrp = ns->endgrp;
+	NvmeRuhStatus *hdr;
+	NvmeRuhStatusDescr *ruhsd;
+
+	if (!endgrp->fdp.enabled)
+		return NVME_FDP_DISABLED | NVME_DNR;
+	
+	/* Only a single RG is supported */
+	nruhsd = endgrp->fdp.nruh * endgrp->fdp.nrg;
+	trans_len = sizeof(NvmeRuhStatus) + nruhsd *sizeof(NvmeRuhStatusDescr);
+	buf = g_malloc(trans_len);
+
+	trans_len = MIN(trans_len, len);
+
+	hdr = (NvmeRuhStatus *)buf;
+	ruhsd = (NvmeRuhStatusDescr *)(buf + sizeof(NvmeRuhStatus));
+
+	hdr->nruhsd = cpu_to_le16(nruhsd);
+
+	ruhid = ns->fdp.phs;
+
+	// FIXME
+	for (ph = 0; ph < ns->fdp.nphs; ph++, ruhid++) {
+		NvmeRuHandle *ruh = &endgrp->fdp.ruhs[*ruhid];
+
+		for (rg = 0; rg < endgrp->fdp.nrg; rg++, ruhsd++) {
+			uint16_t pid = nvme_make_pid(ns, rg, ph);
+		
+			ruhsd->pid = cpu_to_le16(pid);
+			ruhsd->ruhid = *ruhid;
+			ruhsd->earutr = 0;
+			ruhsd->ruamw = cpu_to_le64(ruh->rus[rg].ruamw);
+		}
+	}
+	ret = fdp_dma_read(n, (uint8_t *)buf, trans_len, cmd);
+
+	if( ret ) {
+		return ret;
+	}
+	return NVME_SUCCESS;
+
+}
+
+static uint16_t nvme_io_mgmt_recv(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd) 
+{
+	//NvmeCmd *cmd = &req->cmd;
+	uint32_t cdw10 = le32_to_cpu(cmd->cdw10);
+	uint32_t numd = le32_to_cpu(cmd->cdw11);
+	uint8_t mo = (cdw10 & 0xff);
+	size_t len = (numd + 1) << 2;
+
+	switch (mo) {
+		case NVME_IOMR_MO_NOP:
+			return 0;
+		case NVME_IOMR_MO_RUH_STATUS:
+			return nvme_io_mgmt_recv_ruhs(n, ns, cmd, len);
+		default:
+			return NVME_INVALID_FIELD | NVME_DNR;
+	};
+}
+
 // FIXME:
 static uint16_t fdp_io_cmd(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, 
 		NvmeRequest *req)
@@ -100,19 +190,16 @@ static uint16_t fdp_io_cmd(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
 		case NVME_CMD_READ:
 		case NVME_CMD_WRITE:
 			return fdp_nvme_rw(n, ns, cmd, req);
+		case NVME_CMD_IO_MGMT_RECV:
+			/* NVME_CMD_IO_MGMT_RECV = 0x12 */
+			/* nvme-cli fdp status */
+			return nvme_io_mgmt_recv(n, ns, cmd);
+		case NVME_CMD_IO_MGMT_SEND:
+			/* NVME_CMD_IO_MGMT_SEND = 0x1d */
+			/* nvme-cli fdp ruh update */
 		default:
 			return NVME_INVALID_OPCODE | NVME_DNR;
 	}
-}
-
-// FIXME: 
-static uint16_t fdp_dma_read(FemuCtrl *n, uint8_t *ptr, 
-							uint32_t len, NvmeCmd *cmd) 
-{
-	uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
-	uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
-	
-	return dma_read_prp(n, ptr, len, prp1, prp2);
 }
 
 // FIXME: 
