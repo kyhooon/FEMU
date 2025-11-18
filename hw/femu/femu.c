@@ -569,7 +569,7 @@ static void nvme_init_endgrp(FemuCtrl *n)
 
 	for (uint16_t ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
 		endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
-			.ruht = n->fdp_params.ruh_type != 1 ? NVME_RUHT_INITIALLY_ISOLATED:NVME_RUHT_PERSISTENTLY_ISOLATED,
+			.ruht = n->fdp_params.ruh_type == 1 ? NVME_RUHT_INITIALLY_ISOLATED:NVME_RUHT_PERSISTENTLY_ISOLATED,
 			.ruha = NVME_RUHA_UNUSED,
 		};
 		endgrp->fdp.ruhs[ruhid].rus = g_malloc0(sizeof(NvmeReclaimUnit) * n->fdp_params.nr_rg);

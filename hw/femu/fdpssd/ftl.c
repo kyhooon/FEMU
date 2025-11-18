@@ -218,7 +218,6 @@ static void ssd_advance_write_pointer(struct ssd *ssd, uint16_t ph)
     struct line_mgmt *lm = &ssd->lm;
 	struct write_pointer *wpp = NULL;
 
-	// FIXME
 	/* ruhmap -> wp_idx */
 	int wp_idx = ssd->ruhmap[ph];
 	wpp = &ssd->wp[wp_idx];
@@ -870,6 +869,7 @@ static int do_gc(struct ssd *ssd, bool force)
 	struct line *victim_line = NULL;
 	struct ssdparams *spp = &ssd->sp;
 	struct nand_lun *lunp;
+	NvmeRuHandle *ruh;
 	struct ppa ppa;
 	int ch, lun;
 
@@ -884,6 +884,19 @@ static int do_gc(struct ssd *ssd, bool force)
 	/* based on the line type, choose the target line to which valid data will be copied. */
 	//ruht = victim_line->ruht;
 	ph = victim_line->ruhid;
+
+	// FIXME : 
+	// Issue encountered during ii type reclamation:
+	// ph does not match the expected ruhid
+	if (victim_line->ruht == 1) {
+		for (int i = 0; i < spp->nruh; i++) {
+			ruh = &ssd->ruhs[i];
+			if (ruh->ruht == NVME_RUHT_INITIALLY_ISOLATED) {
+				ph = i;
+				break;
+			}
+		}
+	}
 
 	ppa.g.blk = victim_line->id;
 	ftl_debug("GC-ing line:%d,ipc=%d,victim=%d,full=%d,free=%d\n", ppa.g.blk,
@@ -943,8 +956,7 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	uint64_t curlat = 0, maxlat = 0;
 	int r;
 
-	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT ||
-		!nvme_parse_pid(ns, pid, &ph, &rg)) {
+	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT || !nvme_parse_pid(ns, pid, &ph, &rg)) {
 		ph = 0;	
 		rg = 1;
 	}
