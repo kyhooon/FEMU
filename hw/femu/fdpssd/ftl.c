@@ -1,5 +1,8 @@
 #include "ftl.h"
 
+/* WAF */
+static FILE *WAFData = NULL;
+
 static void *ftl_thread(void *arg);
 
 static inline bool should_gc(struct ssd *ssd)
@@ -1065,6 +1068,17 @@ static void *ftl_thread(void *arg)
 	int rc;
 	int i;
 
+	bool is_first = false;
+	uint64_t start_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+	
+	/* WAF */
+	double WAF = 0.0;
+	WAFData = fopen("/home/cpslab/WAFData.csv", "w");
+	if (WAFData == NULL) {
+		ftl_err("Failed to open WAFData.csv\n");
+	}
+	fprintf(WAFData, "time(s), hostWrite, GCWrite, WAF\n");
+
 	while (!*(ssd->dataplane_started_ptr)) {
 		usleep(100000);
 	}
@@ -1073,7 +1087,7 @@ static void *ftl_thread(void *arg)
 	ssd->to_poller = n->to_poller;
 
 	while(1) {
-		// FIXME
+
 		for(i = 1; i <= n->nr_pollers; i++) {
 			if( !ssd->to_ftl[i] || !femu_ring_count(ssd->to_ftl[i]) )
 				continue;
@@ -1105,6 +1119,25 @@ static void *ftl_thread(void *arg)
 				ftl_err("FTL to_poller enqueue failed\n");
 			}
 
+			/* WAF */
+			uint64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+			uint64_t timestamp = current_time - start_time;
+
+			if (timestamp >= 1000000000ULL) {
+				WAF = ssd->hostWrite > 0 ?
+									(double) (ssd->hostWrite + ssd->GCWrite) / (double) ssd->hostWrite : 0;
+				double current = (double) current_time / 1000000000.0;
+
+				if (!is_first) {
+					femu_log("fio workload timestamp: %7.2f\n", current);
+				}
+
+				fprintf(WAFData, "%7.2f,%9lu,%9lu,%8.5f\n", current, ssd->hostWrite, ssd->GCWrite, WAF); 
+				fflush(WAFData);
+
+				start_time = current_time;
+			}
+
 			// FIXME
 			/* clean one line if needed (in the background) */
 			if (should_gc(ssd)) {
@@ -1112,6 +1145,8 @@ static void *ftl_thread(void *arg)
 			}
 		}
 	}
+
+	fclose(WAFData);
 
 	return NULL;
 }
