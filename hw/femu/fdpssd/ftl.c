@@ -20,13 +20,11 @@ static inline void check_addr(int a, int max)
 	ftl_assert(a >= 0 && a < max);
 }
 
-// FIXME
 static inline bool nvme_ph_valid(NvmeNamespace *ns, uint16_t ph) 
 {	
 	return ph < ns->fdp.nphs;
 }
 
-// FIXME
 static inline bool nvme_rg_valid(NvmeEnduranceGroup *endgrp, uint16_t rg) 
 {
 	return rg < endgrp->fdp.nrg;
@@ -284,7 +282,6 @@ static void ssd_advance_write_pointer(struct ssd *ssd, uint16_t ph)
     }
 }
 
-// FIXME 
 static struct ppa get_new_page(struct ssd *ssd, int ph)
 {
 	struct write_pointer *wpp = NULL;
@@ -571,6 +568,17 @@ static void ssd_init_write_pointer(struct ssd *ssd)
 	} 
 }
 
+static void ssd_init_lpn_tracking(struct ssd *ssd) 
+{
+	struct ssdparams *spp = &ssd->sp;
+	
+	ssd->lpnCount = g_malloc0(sizeof(uint64_t) * spp->tt_pgs);
+
+	for (int i = 0; i < spp->tt_pgs; i++) {
+		ssd->lpnCount[i] = 0;
+	}
+}
+
 void fdp_ssd_init(FemuCtrl *n) 
 {
 	struct ssd *ssd = n->ssd;
@@ -602,6 +610,9 @@ void fdp_ssd_init(FemuCtrl *n)
 	/* ii / pi write pointer */
 	ssd_init_write_pointer(ssd);
 
+	/* lpn tracking */
+	ssd_init_lpn_tracking(ssd);
+
 	/* initialize hostWrite, GCWrite */
 	ssd->hostWrite = 0;
 	ssd->GCWrite = 0;
@@ -632,7 +643,6 @@ static uint64_t ssd_advance_status(struct ssd *ssd, struct ppa *ppa,
 		break;
 
 	case NAND_WRITE:
-		// FIXME
 		nand_stime = (lun->next_lun_avail_time < cmd_stime) ? cmd_stime : \
 					lun->next_lun_avail_time;
 		if (ncmd->type == USER_IO) {
@@ -850,7 +860,6 @@ static void clean_one_block(struct ssd *ssd, struct ppa *ppa, int ph)
 	ftl_assert(get_blk(ssd, ppa)->vpc == cnt);
 }
 
-// FIXME
 static void mark_line_free(struct ssd *ssd, struct ppa *ppa) 
 {
 	struct line_mgmt *lm = &ssd->lm;
@@ -998,7 +1007,6 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 			set_rmap_ent(ssd, INVALID_LPN, &ppa);
 		}
 
-		// FIXME 
 		/* new write */
 		ppa = get_new_page(ssd, ph);
 		/* update maptbl */
@@ -1018,6 +1026,9 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 		/* get latency statistics */
 		curlat = ssd_advance_status(ssd, &ppa, &swr);
 		maxlat = (curlat > maxlat) ? curlat : maxlat;
+
+		/* lpnCount */
+		ssd->lpnCount[start_lpn] += 1;
 
 		/* hostWrite */
 		ssd->hostWrite += 1;
@@ -1068,10 +1079,13 @@ static void *ftl_thread(void *arg)
 	int rc;
 	int i;
 
-	bool is_first = false;
+	/* lpnCount */
+	bool workload_ended = false;
 	uint64_t start_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+	uint64_t last_io_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
 	
 	/* WAF */
+	bool is_first = false;
 	double WAF = 0.0;
 	WAFData = fopen("/home/cpslab/WAFData.csv", "w");
 	if (WAFData == NULL) {
@@ -1091,6 +1105,9 @@ static void *ftl_thread(void *arg)
 		for(i = 1; i <= n->nr_pollers; i++) {
 			if( !ssd->to_ftl[i] || !femu_ring_count(ssd->to_ftl[i]) )
 				continue;
+
+			/* lpnCount */
+			last_io_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
 			
 			rc = femu_ring_dequeue(ssd->to_ftl[i], (void *)&req, 1);
 			if( rc != 1) {
@@ -1129,7 +1146,8 @@ static void *ftl_thread(void *arg)
 				double current = (double) current_time / 1000000000.0;
 
 				if (!is_first) {
-					femu_log("fio workload timestamp: %7.2f\n", current);
+					femu_log("workload timestamp: %7.2f\n", current);
+					is_first = true;
 				}
 
 				fprintf(WAFData, "%7.2f,%9lu,%9lu,%8.5f\n", current, ssd->hostWrite, ssd->GCWrite, WAF); 
@@ -1138,12 +1156,32 @@ static void *ftl_thread(void *arg)
 				start_time = current_time;
 			}
 
-			// FIXME
 			/* clean one line if needed (in the background) */
 			if (should_gc(ssd)) {
 				do_gc(ssd, false);
 			}
 		}
+
+		/* lpnCount */
+		if (!workload_ended) {
+			uint64_t check_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+			/* 1 minutes */
+			if ((check_time - last_io_time) > 60000000000ULL) {
+				workload_ended = true; 
+
+				FILE *accessCount = fopen("/home/cpslab/lpnCount.csv", "w");
+				if (accessCount == NULL)
+					ftl_err("Failed to open lpnCount.csv\n");
+
+				for (uint64_t j = 0; j < ssd->sp.tt_pgs; j++) {
+					fprintf(accessCount, "%7lu, %7lu\n", j, ssd->lpnCount[j]);
+				}
+				fflush(accessCount);
+				fclose(accessCount);
+				femu_log("lpnCount successfully recorded !\n");
+			}
+
+		} 
 	}
 
 	fclose(WAFData);

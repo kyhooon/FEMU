@@ -230,6 +230,9 @@ struct ssd {
 	uint64_t hostWrite;
 	uint64_t GCWrite;
 
+	/* lpnCount */
+	uint64_t *lpnCount;
+
 	QemuThread ftl_thread;
 };
 
