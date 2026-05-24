@@ -220,8 +220,9 @@ static void ssd_advance_write_pointer(struct ssd *ssd, uint16_t ph)
 	struct write_pointer *wpp = NULL;
 
 	/* ruhmap -> wp_idx */
-	int wp_idx = ssd->ruhmap[ph];
-	wpp = &ssd->wp[wp_idx];
+	//int wp_idx = ssd->ruhmap[ph];
+	//wpp = &ssd->wp[wp_idx];
+	wpp = &ssd->wp[ph];
 
     check_addr(wpp->ch, spp->nchs);
     wpp->ch++;
@@ -259,16 +260,12 @@ static void ssd_advance_write_pointer(struct ssd *ssd, uint16_t ph)
                     abort();
                 }
 
-				// FIXME
-				// The RUH type of a line is inferred from its assigned write-pointer index.
-				// - wp_idx == 0 : ii type
-				// - wp_idx > 0 : pi type
-				if (wp_idx > 0) 
-					wpp->curline->ruht = 2;
-				else 
+				if (spp->ruh_type == 1) 
 					wpp->curline->ruht = 1;
+				else 
+					wpp->curline->ruht = 2;
 				wpp->curline->ruhid = ph;
-
+				
                 wpp->blk = wpp->curline->id;
                 check_addr(wpp->blk, spp->blks_per_pl);
                 /* make sure we are starting from page 0 in the super block */
@@ -282,15 +279,15 @@ static void ssd_advance_write_pointer(struct ssd *ssd, uint16_t ph)
     }
 }
 
-static struct ppa get_new_page(struct ssd *ssd, int ph)
+static struct ppa get_new_page(struct ssd *ssd, int ruhid)
 {
 	struct write_pointer *wpp = NULL;
 	struct ppa ppa;
-	int wp_idx;
 
 	/* ph (ruh_id) to obtain the corresponding wp_idx */
-	wp_idx = ssd->ruhmap[ph];
-	wpp = &ssd->wp[wp_idx];
+	//wp_idx = ssd->ruhmap[ph];
+	//wpp = &ssd->wp[wp_idx];
+	wpp = &ssd->wp[ruhid];
 
 	ppa.ppa = 0;
 	ppa.g.ch = wpp->ch;
@@ -484,12 +481,12 @@ static void ssd_init_rmap(struct ssd *ssd)
 static void ssd_init_write_pointer(struct ssd *ssd) 
 {
 	int i;
-	int ii_cnt = 0;
-	int pi_cnt = 0;
+	//int ii_cnt = 0;
+	//int pi_cnt = 0;
 
-	int pi_wp_start = 1;
-	int wp_idx = 0;
-	int *map = NULL;
+	//int pi_wp_start = 1;
+	//int wp_idx = 0;
+	//int *map = NULL;
 
 	struct line_mgmt *lm = &ssd->lm;
 	struct ssdparams *spp = &ssd->sp;
@@ -497,75 +494,102 @@ static void ssd_init_write_pointer(struct ssd *ssd)
 	struct NvmeRuHandle *ruh = NULL;
 	struct write_pointer *wpp = NULL;
 	
-	for (i = 0; i < spp->nruh; i++) {
-		ruh = &ssd->ruhs[i];
-		if (ruh->ruht == NVME_RUHT_PERSISTENTLY_ISOLATED) 
-			pi_cnt++;
-		else 
-			ii_cnt++;
-	}
+	//for (i = 0; i < spp->nruh; i++) {
+	//	ruh = &ssd->ruhs[i];
+	//	if (ruh->ruht == NVME_RUHT_PERSISTENTLY_ISOLATED) 
+	//		pi_cnt++;
+	//	else 
+	//		ii_cnt++;
+	//}
 
 	/* ruh_index <-> wp_index mapping */
-	map = ssd->ruhmap = g_malloc0(sizeof(int) * spp->nruh);
+	//map = ssd->ruhmap = g_malloc0(sizeof(int) * spp->nruh);
 
 	/* [0] ii_type_wp, [1 ~ nruh-1] pi_type_wp */
-	ssd->wp = g_malloc0(sizeof(struct write_pointer) * (1 + pi_cnt));
+	//ssd->wp = g_malloc0(sizeof(struct write_pointer) * (1 + pi_cnt));
+	ssd->wp = g_malloc0(sizeof(struct write_pointer) * (spp->nruh));
 
-	if (ii_cnt > 0) {
-		wpp = &ssd->wp[0];
+	for (i = 0; i < spp->nruh; i++) {
+		
+		ruh = &ssd->ruhs[i];
+		wpp = &ssd->wp[i];
 		curline = QTAILQ_FIRST(&lm->free_line_list);
 		QTAILQ_REMOVE(&lm->free_line_list, curline, entry);
 		lm->free_line_cnt--;
-
-		curline->ruht = 1;
 		
 		wpp->curline = curline;
+		if (ruh->ruht == NVME_RUHT_PERSISTENTLY_ISOLATED) {
+			curline->ruht = 2;
+			wpp->type = 2;
+		} else {
+			curline->ruht = 1;
+			wpp->type = 1;
+		}
+
+		curline->ruhid = i;
 		wpp->ch = 0;
 		wpp->lun = 0;
 		wpp->pg = 0;
 		wpp->blk = wpp->curline->id;
 		wpp->pl = 0;
-		wpp->type = 1;
+
 	}
 
-	int pi_allocated = 0;
-	for (i = 0; i < spp->nruh; i++) {
+	//if (ii_cnt > 0) {
+	//	wpp = &ssd->wp[0];
+	//	curline = QTAILQ_FIRST(&lm->free_line_list);
+	//	QTAILQ_REMOVE(&lm->free_line_list, curline, entry);
+	//	lm->free_line_cnt--;
 
-		ruh = &ssd->ruhs[i];
+	//	curline->ruht = 1;
+	//	
+	//	wpp->curline = curline;
+	//	wpp->ch = 0;
+	//	wpp->lun = 0;
+	//	wpp->pg = 0;
+	//	wpp->blk = wpp->curline->id;
+	//	wpp->pl = 0;
+	//	wpp->type = 1;
+	//}
 
-		if (ruh->ruht == NVME_RUHT_INITIALLY_ISOLATED) {
-			// ii type is mapped to idx 0
-			map[i] = 0;
-			// wpp = &ssd->wpp[0];
+	//int pi_allocated = 0;
+	//for (i = 0; i < spp->nruh; i++) {
 
-		} else {
-			// pi type allocates an independent write pointer
-			wp_idx = pi_wp_start + pi_allocated; 
+	//	ruh = &ssd->ruhs[i];
 
-			wpp = NULL;
-			wpp = &ssd->wp[wp_idx];
-			curline = QTAILQ_FIRST(&lm->free_line_list);
-			QTAILQ_REMOVE(&lm->free_line_list, curline, entry);
+	//	if (ruh->ruht == NVME_RUHT_INITIALLY_ISOLATED) {
+	//		// ii type is mapped to idx 0
+	//		map[i] = 0;
+	//		// wpp = &ssd->wpp[0];
 
-			/* pi type */
-			curline->ruht = 2;
-			curline->ruhid = i;		
+	//	} else {
+	//		// pi type allocates an independent write pointer
+	//		wp_idx = pi_wp_start + pi_allocated; 
 
-			lm->free_line_cnt--;
-			
-			wpp->curline = curline;
-			wpp->ch = 0;
-			wpp->lun = 0;
-			wpp->pg = 0;
-			wpp->blk = wpp->curline->id;
-			wpp->pl = 0;
-			wpp->type = 2;
+	//		wpp = NULL;
+	//		wpp = &ssd->wp[wp_idx];
+	//		curline = QTAILQ_FIRST(&lm->free_line_list);
+	//		QTAILQ_REMOVE(&lm->free_line_list, curline, entry);
 
-			map[i] = wp_idx;
-			
-			pi_allocated++;
-		}
-	} 
+	//		/* pi type */
+	//		curline->ruht = 2;
+	//		curline->ruhid = i;		
+
+	//		lm->free_line_cnt--;
+	//		
+	//		wpp->curline = curline;
+	//		wpp->ch = 0;
+	//		wpp->lun = 0;
+	//		wpp->pg = 0;
+	//		wpp->blk = wpp->curline->id;
+	//		wpp->pl = 0;
+	//		wpp->type = 2;
+
+	//		map[i] = wp_idx;
+	//		
+	//		pi_allocated++;
+	//	}
+	//} 
 }
 
 static void ssd_init_lpn_tracking(struct ssd *ssd) 
@@ -607,7 +631,7 @@ void fdp_ssd_init(FemuCtrl *n)
 	ssd_init_lines(ssd);
 
 	/* initialize write pointer */
-	/* ii / pi write pointer */
+	/* --- FDP --- */
 	ssd_init_write_pointer(ssd);
 
 	/* lpn tracking */
@@ -795,14 +819,14 @@ static void gc_read_page(struct ssd *ssd, struct ppa *ppa)
 
 // FIXME
 /* move valid page data (already in DRAM) from victim line to a new page */
-static uint64_t gc_write_page(struct ssd *ssd, struct ppa *old_ppa, int ph)
+static uint64_t gc_write_page(struct ssd *ssd, struct ppa *old_ppa, int ruhid)
 {
 	struct ppa new_ppa;
 	struct nand_lun *new_lun;
 	uint64_t lpn = get_rmap_ent(ssd, old_ppa);
 	
 	ftl_assert(valid_lpn(ssd, lpn));
-	new_ppa = get_new_page(ssd, ph);
+	new_ppa = get_new_page(ssd, ruhid);
 	/* update maptbl */
 	set_maptbl_ent(ssd, lpn, &new_ppa);
 	/* update rmap */
@@ -811,7 +835,7 @@ static uint64_t gc_write_page(struct ssd *ssd, struct ppa *old_ppa, int ph)
 	mark_page_valid(ssd, &new_ppa);
 
 	/* need to advance the write pointer here */
-	ssd_advance_write_pointer(ssd, ph);
+	ssd_advance_write_pointer(ssd, ruhid);
 
 	if (ssd->sp.enable_gc_delay) {
 		struct nand_cmd gcw;
@@ -835,7 +859,7 @@ static uint64_t gc_write_page(struct ssd *ssd, struct ppa *old_ppa, int ph)
 
 // FIXME
 /* here ppa identifies the block we want to clean */
-static void clean_one_block(struct ssd *ssd, struct ppa *ppa, int ph) 
+static void clean_one_block(struct ssd *ssd, struct ppa *ppa, int ruhid) 
 {
 	struct ssdparams *spp = &ssd->sp;
 	struct nand_page *pg_iter = NULL;
@@ -849,7 +873,7 @@ static void clean_one_block(struct ssd *ssd, struct ppa *ppa, int ph)
 		if (pg_iter->status == PG_VALID) {
 			gc_read_page(ssd, ppa);
 			/* delay the maptbl update until "write" happens */
-			gc_write_page(ssd, ppa, ph);
+			gc_write_page(ssd, ppa, ruhid);
 			cnt++;
 
 			/* WAF */
@@ -881,12 +905,12 @@ static int do_gc(struct ssd *ssd, bool force)
 	struct line *victim_line = NULL;
 	struct ssdparams *spp = &ssd->sp;
 	struct nand_lun *lunp;
-	NvmeRuHandle *ruh;
+	//NvmeRuHandle *ruh;
 	struct ppa ppa;
 	int ch, lun;
 
 	//int ruht;
-	int ph;
+	//int ph;
 
 	victim_line = select_victim_line(ssd, force);
 	if (!victim_line) {
@@ -895,19 +919,34 @@ static int do_gc(struct ssd *ssd, bool force)
 	/* find the RUH ID and type of the current line (victim_line) */
 	/* based on the line type, choose the target line to which valid data will be copied. */
 	//ruht = victim_line->ruht;
-	ph = victim_line->ruhid;
+	//ph = victim_line->ruhid;
 
 	// FIXME : 
 	// Issue encountered during ii type reclamation:
 	// ph does not match the expected ruhid
+	//if (victim_line->ruht == 1) {
+	//	for (int i = 0; i < spp->nruh; i++) {
+	//		ruh = &ssd->ruhs[i];
+	//		if (ruh->ruht == NVME_RUHT_INITIALLY_ISOLATED) {
+	//			ph = i;
+	//			break;
+	//		}
+	//	}
+	//}
+
+	// ruht == 1 (INITIALLY_ISOLATED)
+	// ruht == 2 (PERSISTENTLY_ISOLATED)
+	int dest_ruhid = 0;
+	ftl_assert(victim_line->ruhid != -1);
 	if (victim_line->ruht == 1) {
-		for (int i = 0; i < spp->nruh; i++) {
-			ruh = &ssd->ruhs[i];
-			if (ruh->ruht == NVME_RUHT_INITIALLY_ISOLATED) {
-				ph = i;
-				break;
-			}
-		}
+		// II: use last RUH as GC distination.
+		dest_ruhid = spp->nruh - 1;	
+		
+	} else if (victim_line->ruht == 2) {
+		// PI: use same ruhid 
+		dest_ruhid = victim_line->ruhid;
+	} else {
+		ftl_err("Undefine RUHT");
 	}
 
 	ppa.g.blk = victim_line->id;
@@ -923,7 +962,7 @@ static int do_gc(struct ssd *ssd, bool force)
 			ppa.g.pl = 0;
 	
 			lunp = get_lun(ssd, &ppa);
-			clean_one_block(ssd, &ppa, ph);
+			clean_one_block(ssd, &ppa, dest_ruhid);
 			mark_block_free(ssd, &ppa);
 
 			if (spp->enable_gc_delay) {
@@ -976,8 +1015,6 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	if (ph >= spp->nruh) {
 		return NVME_INVALID_FIELD | NVME_DNR;
 	}
-
-	//NvmeRuHandle *ruh = &ssd->ruhs[ph];
 
 	// FIXME
 	// update EnduranceGroup hbmw/mbmw 

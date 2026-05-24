@@ -218,7 +218,7 @@ struct ssd {
 	/* II, PI write pointer */
 	struct write_pointer *wp;
 	/* ruh_index <-> wp_index mapping */
-	int *ruhmap;
+	//int *ruhmap;
 
 	struct line_mgmt lm;
 
