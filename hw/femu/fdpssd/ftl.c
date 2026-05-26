@@ -859,7 +859,7 @@ static uint64_t gc_write_page(struct ssd *ssd, struct ppa *old_ppa, int ruhid)
 
 // FIXME
 /* here ppa identifies the block we want to clean */
-static void clean_one_block(struct ssd *ssd, struct ppa *ppa, int ruhid) 
+static int clean_one_block(struct ssd *ssd, struct ppa *ppa, int ruhid) 
 {
 	struct ssdparams *spp = &ssd->sp;
 	struct nand_page *pg_iter = NULL;
@@ -882,6 +882,7 @@ static void clean_one_block(struct ssd *ssd, struct ppa *ppa, int ruhid)
 	}
 
 	ftl_assert(get_blk(ssd, ppa)->vpc == cnt);
+	return cnt;
 }
 
 static void mark_line_free(struct ssd *ssd, struct ppa *ppa) 
@@ -908,31 +909,12 @@ static int do_gc(struct ssd *ssd, bool force)
 	//NvmeRuHandle *ruh;
 	struct ppa ppa;
 	int ch, lun;
-
-	//int ruht;
-	//int ph;
+	int vpc_cnt = 0;
 
 	victim_line = select_victim_line(ssd, force);
 	if (!victim_line) {
 		return -1;
 	}
-	/* find the RUH ID and type of the current line (victim_line) */
-	/* based on the line type, choose the target line to which valid data will be copied. */
-	//ruht = victim_line->ruht;
-	//ph = victim_line->ruhid;
-
-	// FIXME : 
-	// Issue encountered during ii type reclamation:
-	// ph does not match the expected ruhid
-	//if (victim_line->ruht == 1) {
-	//	for (int i = 0; i < spp->nruh; i++) {
-	//		ruh = &ssd->ruhs[i];
-	//		if (ruh->ruht == NVME_RUHT_INITIALLY_ISOLATED) {
-	//			ph = i;
-	//			break;
-	//		}
-	//	}
-	//}
 
 	// ruht == 1 (INITIALLY_ISOLATED)
 	// ruht == 2 (PERSISTENTLY_ISOLATED)
@@ -962,7 +944,7 @@ static int do_gc(struct ssd *ssd, bool force)
 			ppa.g.pl = 0;
 	
 			lunp = get_lun(ssd, &ppa);
-			clean_one_block(ssd, &ppa, dest_ruhid);
+			vpc_cnt += clean_one_block(ssd, &ppa, dest_ruhid);
 			mark_block_free(ssd, &ppa);
 
 			if (spp->enable_gc_delay) {
@@ -975,6 +957,11 @@ static int do_gc(struct ssd *ssd, bool force)
 			lunp->gc_endtime = lunp->next_lun_avail_time;
 		}
 	}
+
+	// FIXME 
+	// per_ruh_WAF 
+	uint64_t gc_bytes = (uint64_t)vpc_cnt * spp->secsz * spp->secs_per_pg;
+	nvme_fdp_stat_inc(&ssd->ruhs[victim_line->ruhid].GCWrite, gc_bytes);
 
 	/* update line status */
 	mark_line_free(ssd, &ppa);
@@ -1022,7 +1009,10 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	nvme_fdp_stat_inc(&endgrp->fdp.hbmw, written_bytes);
 	nvme_fdp_stat_inc(&endgrp->fdp.mbmw, written_bytes);
 
-	//ruh->total_writes += written_bytes;
+	// FIXME
+	// per_ruh_WAF
+	nvme_fdp_stat_inc(&ssd->ruhs[ph].hostWrite, written_bytes);
+	nvme_fdp_stat_inc(&ssd->ruhs[ph].GCWrite, written_bytes);
 
 	if (end_lpn >= spp->tt_pgs) {
 		ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);

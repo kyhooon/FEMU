@@ -572,6 +572,11 @@ static void nvme_init_endgrp(FemuCtrl *n)
 			.ruht = n->fdp_params.ruh_type == 1 ? NVME_RUHT_INITIALLY_ISOLATED:NVME_RUHT_PERSISTENTLY_ISOLATED,
 			.ruha = NVME_RUHA_UNUSED,
 		};
+		// FIXME
+		// per_ruh_WAF stats
+		endgrp->fdp.ruhs[ruhid].hostWrite = 0;
+		endgrp->fdp.ruhs[ruhid].GCWrite = 0;
+
 		endgrp->fdp.ruhs[ruhid].rus = g_malloc0(sizeof(NvmeReclaimUnit) * n->fdp_params.nr_rg);
 	} 
 }

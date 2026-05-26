@@ -1182,6 +1182,10 @@ typedef struct NvmeRuHandle {
 	uint8_t lbafi;
 	uint64_t ruamw;
 
+	// per_ruh_WAF 
+	uint64_t hostWrite;
+	uint64_t GCWrite;
+
 	/* RU indexed by reclaim group */
 	NvmeReclaimUnit *rus;
 } NvmeRuHandle;
