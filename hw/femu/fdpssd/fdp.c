@@ -131,7 +131,7 @@ static uint16_t nvme_io_mgmt_recv_ruhs(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *
 	/* Only a single RG is supported */
 	nruhsd = endgrp->fdp.nruh * endgrp->fdp.nrg;
 	trans_len = sizeof(NvmeRuhStatus) + nruhsd *sizeof(NvmeRuhStatusDescr);
-	buf = g_malloc(trans_len);
+	buf = g_malloc0(trans_len);
 
 	trans_len = MIN(trans_len, len);
 

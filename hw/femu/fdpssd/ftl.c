@@ -3,6 +3,10 @@
 /* WAF */
 static FILE *WAFData = NULL;
 
+// FIXME
+/* per_ruh_WAF */
+static FILE *ruhstat = NULL;
+
 static void *ftl_thread(void *arg);
 
 static inline bool should_gc(struct ssd *ssd)
@@ -1101,6 +1105,7 @@ static void *ftl_thread(void *arg)
 {
 	FemuCtrl *n = (FemuCtrl *)arg;
 	struct ssd *ssd = n->ssd;
+	struct ssdparams *spp = &ssd->sp;
 	NvmeRequest *req = NULL;
 	uint64_t lat = 0;
 	int rc;
@@ -1119,6 +1124,14 @@ static void *ftl_thread(void *arg)
 		ftl_err("Failed to open WAFData.csv\n");
 	}
 	fprintf(WAFData, "time(s), hostWrite, GCWrite, WAF\n");
+
+	// FIXME
+	/* per_ruh_WAF */
+	ruhstat = fopen("/home/cpslab/ruhstat.csv", "w");
+	if (ruhstat == NULL) {
+		ftl_err("Failed to open ruhstat.csv\n");
+	}
+	fprintf(ruhstat, "ruhid, hostwrite, GCWrite, WAF\n");
 
 	while (!*(ssd->dataplane_started_ptr)) {
 		usleep(100000);
@@ -1195,7 +1208,7 @@ static void *ftl_thread(void *arg)
 			/* 1 minutes */
 			if ((check_time - last_io_time) > 60000000000ULL) {
 				workload_ended = true; 
-
+				
 				FILE *accessCount = fopen("/home/cpslab/lpnCount.csv", "w");
 				if (accessCount == NULL)
 					ftl_err("Failed to open lpnCount.csv\n");
@@ -1206,6 +1219,16 @@ static void *ftl_thread(void *arg)
 				fflush(accessCount);
 				fclose(accessCount);
 				femu_log("lpnCount successfully recorded !\n");
+
+				/* per_ruh_WAF */ 
+				for (int ruhid = 0; ruhid < spp->nruh; ruhid++) {
+					fprintf(ruhstat, "ruh_id = %d: host_writes = %lu, media_writes = %lu\n",
+											ruhid, ssd->ruhs[ruhid].hostWrite, ssd->ruhs[ruhid].GCWrite);
+				} 
+				fflush(ruhstat);
+				fclose(ruhstat);
+				femu_log("ruh write stats successfully recorded !\n");
+
 			}
 
 		} 

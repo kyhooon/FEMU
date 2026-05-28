@@ -366,6 +366,10 @@ static int nvme_init_namespace(FemuCtrl *n, NvmeNamespace *ns, Error **errp)
     ns->util = bitmap_new(num_blks);
     ns->uncorrectable = bitmap_new(num_blks);
 
+	// FIXME 
+	// FDP: cache lbaf for this namespace 
+	ns->lbaf = id_ns->lbaf[lba_index];
+
     return 0;
 }
 
@@ -558,7 +562,8 @@ static void nvme_init_endgrp(FemuCtrl *n)
 		
 	// FIXME:
 	/* RU == Each Block */
-    endgrp->fdp.runs = MiB * 4;	
+    endgrp->fdp.runs = MiB * 96;	
+	endgrp->fdp.nru = n->fdp_params.blks_per_pl;
     endgrp->fdp.hbmw = 0;
     endgrp->fdp.mbmw = 0;
     endgrp->fdp.mbe = 0;
@@ -610,7 +615,7 @@ static bool nvme_init_fdp(FemuCtrl *n)
 			ruh->ruha = NVME_RUHA_HOST;
 			ruh->lbafi = lbafi;
 			// FIXME: ruamw fomatting problem
-			ruh->ruamw = endgrp->fdp.runs;
+			ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
 			
 			for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
 				ruh->rus[rg].ruamw = ruh->ruamw;

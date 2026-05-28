@@ -1223,6 +1223,7 @@ typedef struct NvmeEnduranceGroup {
 		uint16_t 	nrg;		/* Number of Reclaim Groups */
 		uint8_t 	rgif;		/* RG Identifier Format (MSB) */
 		uint64_t	runs;		/* Reclaim Unit Nominal Size */
+		uint64_t	nru;		/* Reclaim Unit -> blks_per_pl */
 
 		uint64_t	hbmw;		/* Host Bytes Written */
 		uint64_t	mbmw;		/* Media Bytes Written */
@@ -1238,6 +1239,7 @@ typedef struct NvmeEnduranceGroup {
 typedef struct NvmeNamespace {
 	struct FemuCtrl *ctrl;
 	NvmeIdNs        id_ns;
+	NvmeLBAF		lbaf;			// FIXME
 	NvmeRangeType   lba_range[64];
 	unsigned long   *util;
 	unsigned long   *uncorrectable;
