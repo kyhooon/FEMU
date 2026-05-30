@@ -208,6 +208,9 @@ struct ssd {
 
 	NvmeRuHandle *ruhs;
 
+	// Back pointer to the FemuCtrl structure 
+	FemuCtrl *ctrl;
+
 	char *ssdname;
 	struct ssdparams sp;
 	struct ssd_channel *ch;

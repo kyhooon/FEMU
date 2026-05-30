@@ -617,6 +617,7 @@ static bool nvme_init_fdp(FemuCtrl *n)
 			// FIXME: ruamw fomatting problem
 			ruh->ruamw = endgrp->fdp.runs >> ns->lbaf.lbads;
 			
+			// FIXME: only 1 RG is supported 
 			for (uint16_t rg = 0; rg < endgrp->fdp.nrg; rg++) {
 				ruh->rus[rg].ruamw = ruh->ruamw;
 			}

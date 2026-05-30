@@ -1171,6 +1171,9 @@ typedef struct NvmeZone NvmeZone;
 
 // FIXME:
 typedef struct NvmeReclaimUnit {
+	// FIXME:
+	// The RUAMW of each RUH equals the total number of available LBAs 
+	// across all lines assigned to that RUH
 	uint64_t ruamw;	/* reclaim Unit Available Media Writes */
 } NvmeReclaimUnit;
 
