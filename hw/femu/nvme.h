@@ -62,7 +62,6 @@ enum NvmeIomr2Mo {
     NVME_IOMR_MO_VENDOR_SPECIFIC = 0x255,
 };
 
-
 typedef struct NvmeBar {
         uint64_t    cap;
 	uint32_t    vs;
@@ -644,6 +643,84 @@ typedef struct NvmeFdpLog {
 	uint8_t rsvd48[16];
 } NvmeFdpLog;
 
+/* =========== FDP Event start =========== */
+
+/* 
+ * - <Host Event> 
+ * X Reclaim Unit Not Fully Written to Capacity 
+ * X Reclaim Unit Time Limit Exceeded 
+ * X Controller level Reset Modified Reclaim Unit Handles 
+ * X Invalid Placement Identifier 
+ * 
+ * - <Controller Event> 
+ * O Media Reallocated 
+ * O Implicity Modified Reclaim Unit Handle 
+ * 
+ */ 
+enum NvmeFdpEventType {
+    FDP_EVT_RU_NOT_FULLY_WRITTEN = 0x0,
+    FDP_EVT_RU_ATL_EXCEEDED = 0x1,
+    FDP_EVT_CTRL_RESET_RUH = 0x2,
+    FDP_EVT_INVALID_PID = 0x3,
+    FDP_EVT_MEDIA_REALLOC = 0x80,
+    FDP_EVT_RUH_IMPLICIT_RU_CHANGE = 0x81,
+};
+
+#define FDP_EVT_MAX 0xff
+
+// FDP event filter shift table
+static const uint8_t nvme_fdp_evf_shifts[FDP_EVT_MAX] = {
+    /* Host events */
+    [FDP_EVT_RU_NOT_FULLY_WRITTEN]      = 0,
+    [FDP_EVT_RU_ATL_EXCEEDED]           = 1,
+    [FDP_EVT_CTRL_RESET_RUH]            = 2,
+    [FDP_EVT_INVALID_PID]               = 3,
+    /* CTRL events */
+    [FDP_EVT_MEDIA_REALLOC]             = 32,
+    [FDP_EVT_RUH_IMPLICIT_RU_CHANGE]    = 33,
+};
+
+/*
+ * PIV 		- Placement Identifier Valid
+ * NSIDV	- NSID Valid 
+ * LV		- Location Valid
+ */
+enum NvmeFdpEventFlags {
+    FDPEF_PIV = 1 << 0,
+    FDPEF_NSIDV = 1 << 1,
+    FDPEF_LV = 1 << 2,
+};
+
+#define NVME_FDP_MAX_EVENTS 63
+
+typedef struct QEMU_PACKED NvmeFdpEvent {
+    uint8_t  type;
+    uint8_t  flags;
+    uint16_t pid;
+    uint64_t timestamp;
+    uint32_t nsid;
+    uint64_t type_specific[2];
+    uint16_t rgid;
+    uint8_t  ruhid;
+    uint8_t  rsvd35[5];
+    uint64_t vendor[3];
+} NvmeFdpEvent;
+
+typedef struct NvmeFdpEventBuffer {
+    NvmeFdpEvent     events[NVME_FDP_MAX_EVENTS];
+    unsigned int     nelems;
+    unsigned int     start;
+    unsigned int     next;
+} NvmeFdpEventBuffer;
+
+typedef struct QEMU_PACKED NvmeFdpEventsLog {
+    uint32_t num_events;
+    uint8_t  rsvd4[60];
+} NvmeFdpEventsLog;
+
+
+/* =========== FDP Event end =========== */
+
 // FIXME: fdp support
 typedef struct NvmeFdpConfsHdr {
 	uint16_t	num_confs;
@@ -1172,6 +1249,7 @@ typedef struct NvmeZone NvmeZone;
 // FIXME:
 typedef struct NvmeReclaimUnit {
 	// FIXME:
+	// TODO:
 	// The RUAMW of each RUH equals the total number of available LBAs 
 	// across all lines assigned to that RUH
 	uint64_t ruamw;	/* reclaim Unit Available Media Writes */
@@ -1181,9 +1259,9 @@ typedef struct NvmeReclaimUnit {
 typedef struct NvmeRuHandle {
 	uint8_t ruht;	/* Reclaim Unit Handle Type (RUHT) */
 	uint8_t ruha;	/* Reclaim Unit Handle Attributes UNUSED/HOST/CTRL */
-	//uint64_t event_filter;
+	uint64_t event_filter; /* (default) UINT64_MAX */
 	uint8_t lbafi;
-	uint64_t ruamw;
+	uint64_t ruamw;	/* represents the number of LBAs that a single RU can accept */
 
 	// per_ruh_WAF 
 	uint64_t hostWrite;
@@ -1222,6 +1300,9 @@ typedef struct NvmeEnduranceGroup {
 	uint8_t event_conf;
 
 	struct { 
+
+		NvmeFdpEventBuffer host_events, ctrl_events;
+
 		uint16_t 	nruh;		/* Number of RU handles */
 		uint16_t 	nrg;		/* Number of Reclaim Groups */
 		uint8_t 	rgif;		/* RG Identifier Format (MSB) */

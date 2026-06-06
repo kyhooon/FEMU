@@ -291,9 +291,8 @@ static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
 			ruhd->ruht = params.ruh_type;	
 			ruhd++;
 		}
-	} else {
-		// FIXME: 
 	}
+
 	ret = fdp_dma_read(n, (uint8_t *)buf + off, trans_len, cmd);
 	if( ret ) {
 		return ret;	
@@ -353,6 +352,54 @@ static uint16_t fdp_ruh_usage(FemuCtrl *n, uint32_t len,
 }
 
 // FIXME: 
+static uint16_t nvme_fdp_events(FemuCtrl *n, uint32_t len,
+								uint64_t off, NvmeCmd *cmd) 
+{
+	NvmeEnduranceGroup *endgrp = n->namespaces->endgrp;
+	bool host_events = (le32_to_cpu(cmd->cdw10) >> 8) & 0x1;
+	uint32_t log_size, trans_len;
+	uint16_t ret;
+	NvmeFdpEventBuffer *ebuf;
+	NvmeFdpEventsLog *elog = NULL;
+	NvmeFdpEvent *event;
+	
+	if (!endgrp->fdp.enabled) {
+		return NVME_FDP_DISABLED | NVME_DNR;
+	}
+
+	if (host_events) {
+		ebuf = &endgrp->fdp.host_events;
+	} else {
+		ebuf = &endgrp->fdp.ctrl_events;
+	}
+
+	log_size = sizeof(NvmeFdpEventsLog) + ebuf->nelems * sizeof(NvmeFdpEvent);
+	trans_len = MIN(log_size - off, len);
+	elog = g_malloc0(log_size);
+	elog->num_events = cpu_to_le32(ebuf->nelems);
+	event = (NvmeFdpEvent *)(elog + 1);
+
+	if (ebuf->nelems && ebuf->start == ebuf->next) {
+        unsigned int nelems = (NVME_FDP_MAX_EVENTS - ebuf->start);
+        memcpy(event, &ebuf->events[ebuf->start],
+               sizeof(NvmeFdpEvent) * nelems);
+        memcpy(event + nelems, ebuf->events,
+               sizeof(NvmeFdpEvent) * ebuf->next);
+    } else if (ebuf->start < ebuf->next) {
+        memcpy(event, &ebuf->events[ebuf->start],
+               sizeof(NvmeFdpEvent) * (ebuf->next - ebuf->start));
+    }
+
+	ret = fdp_dma_read(n, (uint8_t *)elog + off, trans_len, cmd);
+	g_free(elog);
+	if ( ret ) {
+		return ret;
+	}
+
+	return NVME_SUCCESS;
+}
+
+// FIXME: 
 static uint16_t fdp_get_log(FemuCtrl *n, NvmeCmd *cmd) 
 {
 	uint32_t dw10 = le32_to_cpu(cmd->cdw10);
@@ -387,6 +434,9 @@ static uint16_t fdp_get_log(FemuCtrl *n, NvmeCmd *cmd)
 			return fdp_ruh_usage(n, len, off, cmd);
 
 		case NVME_LOG_FDP_EVENTS:
+			// FIXME:
+			return nvme_fdp_events(n, len, off, cmd);
+
 		default: 
 			return NVME_INVALID_OPCODE | NVME_DNR;
 	}

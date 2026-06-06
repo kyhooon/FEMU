@@ -581,6 +581,8 @@ static void nvme_init_endgrp(FemuCtrl *n)
 		// per_ruh_WAF stats
 		endgrp->fdp.ruhs[ruhid].hostWrite = 0;
 		endgrp->fdp.ruhs[ruhid].GCWrite = 0;
+		
+		endgrp->fdp.ruhs[ruhid].event_filter = UINT64_MAX;
 
 		endgrp->fdp.ruhs[ruhid].rus = g_malloc0(sizeof(NvmeReclaimUnit) * n->fdp_params.nr_rg);
 	} 

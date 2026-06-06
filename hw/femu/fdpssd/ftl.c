@@ -216,6 +216,41 @@ static struct line *get_next_free_line(struct ssd *ssd)
 	return curline;
 }
 
+static inline uint64_t fdp_get_timestamp(void) 
+{
+	struct timespec ts;
+	uint64_t now;
+
+	clock_gettime(CLOCK_REALTIME, &ts);
+
+	now = (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+	
+	return cpu_to_le64(now);
+}
+
+static NvmeFdpEvent *ftl_fdp_alloc_event(struct ssd *ssd, 
+											NvmeFdpEventBuffer *ebuf)
+{
+	NvmeFdpEvent *ret;
+	bool is_full = ebuf->next == ebuf->start && ebuf->nelems;
+
+	ret = &ebuf->events[ebuf->next++];
+	if (unlikely(ebuf->next == NVME_FDP_MAX_EVENTS)) {
+		ebuf->next = 0;
+	}
+
+	if (is_full) {
+		ebuf->start = ebuf->next;
+	} else {
+		ebuf->nelems++;
+	}
+
+	memset(ret, 0, sizeof(NvmeFdpEvent));
+	ret->timestamp = fdp_get_timestamp();
+
+	return ret;
+}
+
 // FIXME: 
 static void ssd_advance_write_pointer(struct ssd *ssd, uint16_t ph)
 {
@@ -913,6 +948,16 @@ static int do_gc(struct ssd *ssd, bool force)
 	nvme_fdp_stat_inc(&endgrp->fdp.mbmw, gc_bytes);
 	nvme_fdp_stat_inc(&endgrp->fdp.mbe, erase_bytes);
 
+	// FDP event
+	NvmeRuHandle *ruh = &ssd->ruhs[victim_line->ruhid];
+	if (ruh->event_filter >> nvme_fdp_evf_shifts[FDP_EVT_RUH_IMPLICIT_RU_CHANGE] & 0x1) {
+		NvmeFdpEvent *e = ftl_fdp_alloc_event(ssd, &endgrp->fdp.ctrl_events);
+		e->type = FDP_EVT_RUH_IMPLICIT_RU_CHANGE;
+		e->flags = FDPEF_LV;
+		e->rgid = cpu_to_le16(0);
+		e->ruhid = victim_line->ruhid;
+	}
+
 	/* update line status */
 	mark_line_free(ssd, &ppa);
 	
@@ -945,8 +990,19 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	int r;
 
 	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT || !nvme_parse_pid(ns, pid, &ph, &rg)) {
+		if (dtype == NVME_DIRECTIVE_DATA_PLACEMENT) {
+			// Invalid Placement Identifier 
+			NvmeRuHandle *ruh = &ssd->ruhs[0];
+			if (ruh->event_filter >> nvme_fdp_evf_shifts[FDP_EVT_INVALID_PID] & 0x1) {
+				NvmeFdpEvent *e = ftl_fdp_alloc_event(ssd, &endgrp->fdp.host_events);
+				e->type = FDP_EVT_INVALID_PID;
+				e->flags = FDPEF_PIV | FDPEF_NSIDV;
+				e->pid = cpu_to_le16(pid);
+				e->nsid = cpu_to_le32(ns->id);
+			}
+		}
 		ph = 0;	
-		rg = 1;
+		rg = 0;
 	}
 
 	if (ph >= spp->nruh) {
@@ -1011,8 +1067,8 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 		ssd->hostWrite += 1;
 	}
 
-	// FIXME 
-	// update 'ruamw' 
+	// When the RU exhausts its allocated LBAs, 
+	// reset ru->ruamw to ruh->ruamw ;
 	NvmeRuHandle *ruh = NULL;
 	NvmeReclaimUnit *ru = NULL;
 	ruh = &ssd->ruhs[ph];
