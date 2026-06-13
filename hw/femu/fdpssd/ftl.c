@@ -1,5 +1,8 @@
 #include "ftl.h"
 
+// filebench
+static uint16_t rr_ph = 0;
+
 /* WAF */
 static FILE *WAFData = NULL;
 
@@ -1001,7 +1004,10 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 				e->nsid = cpu_to_le32(ns->id);
 			}
 		}
-		ph = 0;	
+		// FIXME:
+		// Test: attempt to resolve the issue where Filebench cannot specify ph (RUH id)
+		// 	scheme: random / round-robin O
+		ph = (rr_ph++) % spp->nruh; 
 		rg = 0;
 	}
 
