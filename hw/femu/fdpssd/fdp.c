@@ -243,8 +243,6 @@ static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
 	uint8_t *buf = NULL;
 	uint32_t log_size, trans_len;
 	size_t nruh, fdp_descr_size;
-	
-	FdpCtrlParams params = n->fdp_params;
 
 	NvmeNamespace *ns = n->namespaces;
 	NvmeEnduranceGroup *endgrp = ns->endgrp;
@@ -288,7 +286,7 @@ static uint16_t fdp_confs(FemuCtrl *n, uint32_t buf_len,
 		hdr->runs = cpu_to_le64(endgrp->fdp.runs);
 
 		for( int i = 0; i < nruh; i++ ) {
-			ruhd->ruht = params.ruh_type;	
+			ruhd->ruht = endgrp->fdp.ruhs[i].ruht;
 			ruhd++;
 		}
 	}

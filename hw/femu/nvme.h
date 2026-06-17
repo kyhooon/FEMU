@@ -1263,9 +1263,13 @@ typedef struct NvmeRuHandle {
 	uint8_t lbafi;
 	uint64_t ruamw;	/* represents the number of LBAs that a single RU can accept */
 
-	// per_ruh_WAF 
+	// WAF accounting */
 	uint64_t hostWrite;
 	uint64_t GCWrite;
+
+	/* GC count for lines owned by this RUH, and current valid-page count */
+	uint64_t gc_count;
+	uint64_t valid_pages;
 
 	/* RU indexed by reclaim group */
 	NvmeReclaimUnit *rus;
@@ -1293,6 +1297,16 @@ typedef struct FdpCtrlParams {
 	int nr_rg;		// Number of Reclaim Group
 	int nr_ruh;		// Number of Reclaim Unit Handle
 	int ruh_type;	// RUH type: (1 : Initially Isolated, 2: Persistently Isolated)
+
+	/* Mixed II/PI RUH placement policy */
+	/* 0: Static Half-Split 
+	 * 1: Configurable ratio (ii_ruh_ratio, pi_ruh_ratio)
+	 * 2: Workload-Aware
+	 *-1: falls back to legacy single-type ruh_type behavior */
+	int ruh_placement_policy;
+
+	/* % of RUHs assigned II type for policy 1 (0-100, default 50) */
+	int ii_ruh_ratio;
 } FdpCtrlParams;
 
 //FIXME: NvmeEnduranceGroup 

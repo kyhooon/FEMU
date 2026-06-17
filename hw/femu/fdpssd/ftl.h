@@ -4,6 +4,16 @@
 #define INVALID_LPN (~(0ULL))
 #define UNMAPPED_PPA (~(0ULL))
 
+/* Thresholds for workload-aware sequential/random classification */
+#define WL_SEQ_THRESHOLD_PCT	70
+#define WL_RAND_THRESHOLD_PCT	30
+
+enum {
+	FDP_POLICY_STATIC_HALF		= 0,
+	FDP_POLICY_RATIO_SPLIT		= 1,
+	FDP_POLICY_WORKLOAD_AWARE	= 2,
+};
+
 enum {
 	FEMU_ENABLE_GC_DELAY = 1,
 	FEMU_DISABLE_GC_DELAY = 2,
@@ -170,6 +180,10 @@ struct ssdparams {
 	int nrg;            // total # of Reclaim Group in the SSD
 	int nruh;           // total # of Reclaim Unit Handle in the SSD
 	int ruh_type;       // Initially Isolated (1), Persistently Isolated (2)
+
+	/* Mixed II/PI placement */
+	int ruh_placement_policy;	/* FDP_POLICY_* */
+	int ii_ruh_cnt;				/* # of ii-type RUHs (index 0..ii_ruh_cnt-1) */
 };
 
 // FIXME: 
@@ -204,6 +218,31 @@ struct nand_cmd {
 	int64_t stime;	/* Coperd: request arrival time */
 };
 
+/* 
+ * Workload Characterization statistics collected in the FTL thread 
+ * 
+ * Updated on every write; used by policy 2 (Workload-Aware) for automatic 
+ * RUH selection and periodically flushed to wlstat.csv 
+ */ 
+struct workload_stats {
+	uint64_t seq_writes;		/* pages written in sequential runs */
+	uint64_t rand_writes;		/* pages written with non-contiguous LBAs */
+	uint64_t total_writes;		/* total pages written (seq + rand) */ 
+	uint64_t overwrite_cnt;		/* writes that invalidated an existing mapping */
+	uint64_t last_write_lpn;	/* last LPN written (sequential detection) */
+	bool	 last_lpn_valid;
+
+	/* round-robin counters for RUH assignment within the II and PI subsets */
+	// ii_rr selects among ruhs[0 .. ii_ruh_cnt - 1]
+	// pi_rr selects among ruhs[ii_ruh_cnt .. nruh - 1]
+	uint64_t ii_rr;
+	uint64_t pi_rr;
+
+	/* Result of the most recent sequential-detection check
+	 * wl_update_stats() and wl_select_ruh() */
+	bool last_is_sequential;
+};
+
 struct ssd {
 
 	NvmeRuHandle *ruhs;
@@ -236,6 +275,9 @@ struct ssd {
 	/* lpnCount */
 	uint64_t *lpnCount;
 
+	/* Workload Characterization (policy 2 and wlstat logging) */
+	struct workload_stats wl_stats;
+
 	QemuThread ftl_thread;
 };
 
@@ -251,6 +293,9 @@ void fdp_ssd_init(FemuCtrl *n);
 
 #define ftl_err(fmt, ...) \
 	do { fprintf(stderr, "[FEMU] FTL-Err: " fmt, ## __VA_ARGS__); } while (0)
+
+#define ftl_log(fmt, ...) \
+	do { printf("[FEMU] FTL-Log: " fmt, ## __VA_ARGS__); } while (0)
 
 /* FEMU assert() */
 #ifdef FEMU_DEBUG_FTL

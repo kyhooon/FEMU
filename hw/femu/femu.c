@@ -537,6 +537,37 @@ static int nvme_register_extensions(FemuCtrl *n)
     return 0;
 }
 
+/* Determine the ruht for a given RUH index based on placement policy. */
+static uint8_t fdp_ruh_type_for_idx(FdpCtrlParams *p, int idx)
+{
+	int nruh = p->nr_ruh;
+	int ii_cnt;
+
+	switch (p->ruh_placement_policy) {
+		case 0: 
+			ii_cnt = nruh / 2;
+			break;
+
+		case 1: 
+			ii_cnt = (nruh * p->ii_ruh_ratio + 99) / 100;
+			if (ii_cnt < 0) ii_cnt = 0;
+			if (ii_cnt > nruh) ii_cnt = nruh;
+			break;
+
+		case 2: 
+			ii_cnt = nruh / 2;
+			break;
+
+		default: 
+			return (p->ruh_type == NVME_RUHT_INITIALLY_ISOLATED)
+					? NVME_RUHT_INITIALLY_ISOLATED
+					: NVME_RUHT_PERSISTENTLY_ISOLATED;
+	}
+
+	return (idx < ii_cnt) ? NVME_RUHT_INITIALLY_ISOLATED
+						: NVME_RUHT_PERSISTENTLY_ISOLATED;
+}
+
 // FIXME: FDP support
 static void nvme_init_endgrp(FemuCtrl *n) 
 {
@@ -574,15 +605,18 @@ static void nvme_init_endgrp(FemuCtrl *n)
 
 	for (uint16_t ruhid = 0; ruhid < endgrp->fdp.nruh; ruhid++) {
 		endgrp->fdp.ruhs[ruhid] = (NvmeRuHandle) {
-			.ruht = n->fdp_params.ruh_type == 1 ? NVME_RUHT_INITIALLY_ISOLATED:NVME_RUHT_PERSISTENTLY_ISOLATED,
+			.ruht = fdp_ruh_type_for_idx(&n->fdp_params, ruhid),
 			.ruha = NVME_RUHA_UNUSED,
 		};
-		// FIXME
-		// per_ruh_WAF stats
+
 		endgrp->fdp.ruhs[ruhid].hostWrite = 0;
 		endgrp->fdp.ruhs[ruhid].GCWrite = 0;
 		
 		endgrp->fdp.ruhs[ruhid].event_filter = UINT64_MAX;
+
+		/* per-ruh stats */
+		endgrp->fdp.ruhs[ruhid].gc_count = 0;
+		endgrp->fdp.ruhs[ruhid].valid_pages = 0;
 
 		endgrp->fdp.ruhs[ruhid].rus = g_malloc0(sizeof(NvmeReclaimUnit) * n->fdp_params.nr_rg);
 	} 
@@ -810,6 +844,14 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("fdp_rg", FemuCtrl, fdp_params.nr_rg, 1),
     DEFINE_PROP_INT32("fdp_ruh", FemuCtrl, fdp_params.nr_ruh, 4),
     DEFINE_PROP_INT32("fdp_ruh_type", FemuCtrl, fdp_params.ruh_type, NVME_RUHT_INITIALLY_ISOLATED),
+	/* Mixed II/PI RUH placement policy : 
+	 * 0: Static Half-Split (default) 
+	 * 1: Configurable Ratio
+	 * 2: Workload-Aware 
+	 *-1: legacy single-type fdp_ruh_type behavior */
+	DEFINE_PROP_INT32("fdp_ruh_placement_policy", FemuCtrl, fdp_params.ruh_placement_policy, 0),
+	/* % of II-type RUHs when using policy 1 (0-100, default 50) */
+	DEFINE_PROP_INT32("fdp_ii_ruh_ratio", FemuCtrl, fdp_params.ii_ruh_ratio, 50),
     DEFINE_PROP_END_OF_LIST(),
 };
 

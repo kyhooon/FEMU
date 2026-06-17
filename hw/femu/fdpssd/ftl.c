@@ -1,8 +1,5 @@
 #include "ftl.h"
 
-// filebench
-static uint16_t rr_ph = 0;
-
 /* WAF */
 static FILE *WAFData = NULL;
 
@@ -302,10 +299,7 @@ static void ssd_advance_write_pointer(struct ssd *ssd, uint16_t ph)
                     abort();
                 }
 
-				if (spp->ruh_type == 1) 
-					wpp->curline->ruht = 1;
-				else 
-					wpp->curline->ruht = 2;
+				wpp->curline->ruht = wpp->type;
 				wpp->curline->ruhid = ph;
 				
                 wpp->blk = wpp->curline->id;
@@ -368,6 +362,31 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
 	spp->nrg = n->fdp_params.nr_rg;
 	spp->nruh = n->fdp_params.nr_ruh;
 	spp->ruh_type = n->fdp_params.ruh_type;
+
+	/* Mixed II/PI placement policy */
+	spp->ruh_placement_policy = n->fdp_params.ruh_placement_policy;
+	{
+		int nruh = spp->nruh;
+		switch (spp->ruh_placement_policy) {
+		case FDP_POLICY_STATIC_HALF: 
+			spp->ii_ruh_cnt = nruh / 2;
+			break;
+
+		case FDP_POLICY_RATIO_SPLIT: 
+			int cnt = (nruh * n->fdp_params.ii_ruh_ratio + 99) / 100;
+			spp->ii_ruh_cnt = (cnt < 0) ? 0 : (cnt > nruh) ? nruh : cnt;
+			break; 
+		
+		case FDP_POLICY_WORKLOAD_AWARE: 
+			spp->ii_ruh_cnt = nruh / 2;
+			break; 
+		
+		default: 
+			spp->ii_ruh_cnt = (spp->ruh_type == NVME_RUHT_INITIALLY_ISOLATED) 
+							? nruh : 0;
+			break;
+		}
+	}
 
 	/* calculated values */
 	spp->secs_per_blk = spp->secs_per_pg * spp->pgs_per_blk;
@@ -529,12 +548,7 @@ static void ssd_init_write_pointer(struct ssd *ssd)
 	struct line *curline = NULL;
 	struct NvmeRuHandle *ruh = NULL;
 	struct write_pointer *wpp = NULL;
-	
-	/* ruh_index <-> wp_index mapping */
-	//map = ssd->ruhmap = g_malloc0(sizeof(int) * spp->nruh);
 
-	/* [0] ii_type_wp, [1 ~ nruh-1] pi_type_wp */
-	//ssd->wp = g_malloc0(sizeof(struct write_pointer) * (1 + pi_cnt));
 	ssd->wp = g_malloc0(sizeof(struct write_pointer) * (spp->nruh));
 
 	for (i = 0; i < spp->nruh; i++) {
@@ -563,6 +577,84 @@ static void ssd_init_write_pointer(struct ssd *ssd)
 
 	}
 }
+
+static void ssd_init_workload_stats(struct ssd *ssd) 
+{
+	struct workload_stats *wl = &ssd->wl_stats;
+
+	wl->seq_writes 		= 0;
+	wl->rand_writes 	= 0;
+	wl->total_writes 	= 0;
+	wl->overwrite_cnt 	= 0;
+	wl->last_write_lpn	= 0;
+	wl->last_lpn_valid	= false;
+	wl->ii_rr			= 0;
+	wl->pi_rr			= 0;
+}
+
+/* 
+ * Policy A : Static Half
+ * Policy B : Workload-Aware */
+static void wl_update_stats(struct ssd *ssd, uint64_t start_lpn, 
+												uint64_t end_lpn)
+{
+	struct workload_stats *wl = &ssd->wl_stats;
+	bool is_sequential;
+
+	is_sequential = wl->last_lpn_valid &&
+		(start_lpn == wl->last_write_lpn + 1 ||
+		 start_lpn == wl->last_write_lpn);
+
+	wl->last_is_sequential = is_sequential;
+
+	if (is_sequential)
+		wl->seq_writes++;
+	else
+		wl->rand_writes++;
+	wl->total_writes++;
+	wl->last_write_lpn = end_lpn;
+	wl->last_lpn_valid = true;
+
+	if (ssd->lpnCount[start_lpn] > 0)
+		wl->overwrite_cnt++;
+}
+
+/* Select which RUH to use when the host did not supply an explicit PID */
+static uint16_t wl_select_ruh(struct ssd *ssd)
+{
+	struct ssdparams *spp = &ssd->sp;
+	struct workload_stats *wl = &ssd->wl_stats;
+	int ii_cnt = spp->ii_ruh_cnt;
+	int pi_cnt = spp->nruh - ii_cnt;
+
+	bool is_sequential = wl->last_is_sequential;
+
+	if (spp->ruh_placement_policy == FDP_POLICY_WORKLOAD_AWARE &&
+			wl->total_writes >= 1000) {
+		uint64_t seq_pct = wl->seq_writes * 100 / wl->total_writes;
+
+		if (seq_pct >= WL_SEQ_THRESHOLD_PCT) {
+			if (ii_cnt > 0)
+				return (uint16_t)(wl->ii_rr++ % ii_cnt);
+			return (uint16_t)(wl->pi_rr++ % spp->nruh);
+		}
+		if (seq_pct <= WL_RAND_THRESHOLD_PCT) {
+			if (pi_cnt > 0)
+				return (uint16_t)(ii_cnt + wl->pi_rr++ % pi_cnt);
+			return (uint16_t)(wl->ii_rr++ % spp->nruh);
+		}
+		return (uint16_t)(wl->total_writes % spp->nruh);
+	}
+
+	if (is_sequential) {
+		if (ii_cnt > 0)
+			return (uint16_t)(wl->ii_rr++ % ii_cnt);
+		return (uint16_t)(wl->pi_rr++ % spp->nruh);
+	}
+	if (pi_cnt > 0)
+		return (uint16_t)(ii_cnt + wl->pi_rr++ % pi_cnt);
+	return (uint16_t)(wl->ii_rr++ % spp->nruh);
+} 
 
 static void ssd_init_lpn_tracking(struct ssd *ssd) 
 {
@@ -612,7 +704,10 @@ void fdp_ssd_init(FemuCtrl *n)
 	/* lpn tracking */
 	ssd_init_lpn_tracking(ssd);
 
-	/* initialize hostWrite, GCWrite */
+	/* Workload characterization stats */ 
+	ssd_init_workload_stats(ssd);
+
+	/* initialize WAF counters */
 	ssd->hostWrite = 0;
 	ssd->GCWrite = 0;
 
@@ -707,6 +802,9 @@ static void mark_page_invalid(struct ssd *ssd, struct ppa *ppa)
 		pqueue_insert(lm->victim_line_pq, line);
 		lm->victim_line_cnt++;
 	}
+
+	if (line->ruhid >= 0 && ssd->ruhs[line->ruhid].valid_pages > 0)
+		ssd->ruhs[line->ruhid].valid_pages--;
 }
 
 static void mark_page_valid(struct ssd *ssd, struct ppa *ppa) 
@@ -729,6 +827,10 @@ static void mark_page_valid(struct ssd *ssd, struct ppa *ppa)
 	line = get_line(ssd, ppa);
 	ftl_assert(line->vpc >= 0 && line->vpc < ssd->sp.pgs_per_line);
 	line->vpc++;
+
+	/* track current valid-page count per RUH */ 
+	if (line->ruhid >= 0) 
+		ssd->ruhs[line->ruhid].valid_pages++;
 }
 
 static void mark_block_free(struct ssd *ssd, struct ppa *ppa) 
@@ -896,19 +998,21 @@ static int do_gc(struct ssd *ssd, bool force)
 		return -1;
 	}
 
+	// FIXME: 
+	// Mixed RUH mode : ii_idx is not sure !
 	// ruht == 1 (INITIALLY_ISOLATED)
 	// ruht == 2 (PERSISTENTLY_ISOLATED)
 	int dest_ruhid = 0;
 	ftl_assert(victim_line->ruhid != -1);
-	if (victim_line->ruht == 1) {
-		// II: use last RUH as GC distination.
-		dest_ruhid = spp->nruh - 1;	
-		
-	} else if (victim_line->ruht == 2) {
-		// PI: use same ruhid 
+	if (victim_line->ruht == NVME_RUHT_INITIALLY_ISOLATED) {
+		/* II: GC data goes to the last II-type RUH */
+		dest_ruhid = (spp->ii_ruh_cnt > 0) ? spp->ii_ruh_cnt - 1
+											: spp->nruh - 1;
+	} else if (victim_line->ruht == NVME_RUHT_PERSISTENTLY_ISOLATED) {
 		dest_ruhid = victim_line->ruhid;
 	} else {
-		ftl_err("Undefine RUHT");
+		ftl_err("Underfined RUHT %d\n", victim_line->ruht);
+		dest_ruhid = 0;
 	}
 
 	ppa.g.blk = victim_line->id;
@@ -942,14 +1046,17 @@ static int do_gc(struct ssd *ssd, bool force)
 		}
 	}
 
-	// FIXME 
-	// per_ruh_WAF 
 	uint64_t gc_bytes = (uint64_t)vpc_cnt * spp->secsz * spp->secs_per_pg;
-	nvme_fdp_stat_inc(&ssd->ruhs[victim_line->ruhid].GCWrite, gc_bytes);
+	//nvme_fdp_stat_inc(&ssd->ruhs[victim_line->ruhid].GCWrite, gc_bytes);
+	/* per-RUH GC write in page (same unit as global ssd->GCWrite) */
+	nvme_fdp_stat_inc(&ssd->ruhs[victim_line->ruhid].GCWrite, (uint64_t)vpc_cnt);
 
 	uint64_t erase_bytes = (uint64_t)blk_cnt * spp->secs_per_blk * spp->secsz;
 	nvme_fdp_stat_inc(&endgrp->fdp.mbmw, gc_bytes);
 	nvme_fdp_stat_inc(&endgrp->fdp.mbe, erase_bytes);
+
+	/* per-ruh GC metrics stored in NvmeRuHandle */
+	ssd->ruhs[victim_line->ruhid].gc_count++;
 
 	// FDP event
 	NvmeRuHandle *ruh = &ssd->ruhs[victim_line->ruhid];
@@ -992,6 +1099,8 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 	uint64_t curlat = 0, maxlat = 0;
 	int r;
 
+	wl_update_stats(ssd, start_lpn, end_lpn);
+
 	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT || !nvme_parse_pid(ns, pid, &ph, &rg)) {
 		if (dtype == NVME_DIRECTIVE_DATA_PLACEMENT) {
 			// Invalid Placement Identifier 
@@ -1004,10 +1113,9 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 				e->nsid = cpu_to_le32(ns->id);
 			}
 		}
-		// FIXME:
-		// Test: attempt to resolve the issue where Filebench cannot specify ph (RUH id)
-		// 	scheme: random / round-robin O
-		ph = (rr_ph++) % spp->nruh; 
+		// use for Filebech workload 
+		// ph = (rr_ph++) % spp->nruh; 
+		ph = wl_select_ruh(ssd);
 		rg = 0;
 	}
 
@@ -1023,8 +1131,9 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 
 	// FIXME
 	// per_ruh_WAF
-	nvme_fdp_stat_inc(&ssd->ruhs[ph].hostWrite, written_bytes);
-	nvme_fdp_stat_inc(&ssd->ruhs[ph].GCWrite, written_bytes);
+	//nvme_fdp_stat_inc(&ssd->ruhs[ph].hostWrite, written_bytes);
+	//nvme_fdp_stat_inc(&ssd->ruhs[ph].GCWrite, written_bytes);
+	nvme_fdp_stat_inc(&ssd->ruhs[ph].hostWrite, end_lpn - start_lpn + 1);
 
 	if (end_lpn >= spp->tt_pgs) {
 		ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
@@ -1216,6 +1325,11 @@ static void *ftl_thread(void *arg)
 				fprintf(WAFData, "%7.2f,%9lu,%9lu,%8.5f\n", current, ssd->hostWrite, ssd->GCWrite, WAF); 
 				fflush(WAFData);
 
+				struct workload_stats *wl = &ssd->wl_stats;
+				uint64_t seq_pct = wl->total_writes > 0 
+								? wl->seq_writes * 100 / wl->total_writes : 0;
+				femu_log("wl: seq=%lu rand=%lu overwrite=%lu seq_pct=%lu policy=%d\n", wl->seq_writes, wl->rand_writes, wl->overwrite_cnt, seq_pct, spp->ruh_placement_policy);
+
 				start_time = current_time;
 			}
 
@@ -1243,10 +1357,21 @@ static void *ftl_thread(void *arg)
 				fclose(accessCount);
 				femu_log("lpnCount successfully recorded !\n");
 
-				/* per_ruh_WAF */ 
+				/* per_ruh WAF */
+				//fprintf(ruhstat, "ruhid,ruht,host_writes,gc_writes,gc_count,valid_pages,WAF\n");
+				fprintf(ruhstat, "ruhid,ruht,host_writes(pages),gc_writes(pages),gc_count,valid_pages,WAF\n");
 				for (int ruhid = 0; ruhid < spp->nruh; ruhid++) {
-					fprintf(ruhstat, "ruh_id = %d: host_writes = %lu, media_writes = %lu\n",
-											ruhid, ssd->ruhs[ruhid].hostWrite, ssd->ruhs[ruhid].GCWrite);
+					NvmeRuHandle *ruh = &ssd->ruhs[ruhid];
+					double ruh_waf = ruh->hostWrite > 0 
+						? (double)(ruh->hostWrite + ruh->GCWrite) / ruh->hostWrite 
+						: 0.0;
+					const char *type_str = (ruh->ruht == NVME_RUHT_INITIALLY_ISOLATED)
+										? "II" : "PI";
+					fprintf(ruhstat, "%d,%s,%lu,%lu,%lu,%lu,%.2f\n",
+								ruhid, type_str,
+								ruh->hostWrite, ruh->GCWrite,
+								ruh->gc_count, ruh->valid_pages,
+								ruh_waf);
 				} 
 				fflush(ruhstat);
 				fclose(ruhstat);
