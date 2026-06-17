@@ -945,7 +945,8 @@ static int do_gc(struct ssd *ssd, bool force)
 	// FIXME 
 	// per_ruh_WAF 
 	uint64_t gc_bytes = (uint64_t)vpc_cnt * spp->secsz * spp->secs_per_pg;
-	nvme_fdp_stat_inc(&ssd->ruhs[victim_line->ruhid].GCWrite, gc_bytes);
+	/* per-RUH GC Write in pages (same unit as global ssd->GCWrite) */
+	nvme_fdp_stat_inc(&ssd->ruhs[victim_line->ruhid].GCWrite, (uint64_t)vpc_cnt);
 
 	uint64_t erase_bytes = (uint64_t)blk_cnt * spp->secs_per_blk * spp->secsz;
 	nvme_fdp_stat_inc(&endgrp->fdp.mbmw, gc_bytes);
@@ -1023,8 +1024,8 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 
 	// FIXME
 	// per_ruh_WAF
-	nvme_fdp_stat_inc(&ssd->ruhs[ph].hostWrite, written_bytes);
-	nvme_fdp_stat_inc(&ssd->ruhs[ph].GCWrite, written_bytes);
+	nvme_fdp_stat_inc(&ssd->ruhs[ph].hostWrite, end_lpn - start_lpn + 1);
+	//nvme_fdp_stat_inc(&ssd->ruhs[ph].GCWrite, written_bytes);
 
 	if (end_lpn >= spp->tt_pgs) {
 		ftl_err("start_lpn=%"PRIu64",tt_pgs=%d\n", start_lpn, ssd->sp.tt_pgs);
