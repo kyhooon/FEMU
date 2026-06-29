@@ -63,19 +63,19 @@ enum NvmeIomr2Mo {
 };
 
 typedef struct NvmeBar {
-        uint64_t    cap;
-	uint32_t    vs;
-	uint32_t    intms;
-	uint32_t    intmc;
-	uint32_t    cc;
-	uint32_t    rsvd1;
-	uint32_t    csts;
+    uint64_t    cap;			/* Capabilities */
+	uint32_t    vs;				/* Version (Nvme version ) */
+	uint32_t    intms;			/* Interrupt Mask Set */
+	uint32_t    intmc;			/* Interrupt Mask Clear */
+	uint32_t    cc;				/* Controller Configuration (EN/CSS/MPS/IOSQES/IOCQES) */ 
+	uint32_t    rsvd1;		
+	uint32_t    csts;			/* Controller Status */
 	uint32_t    nssrc;
-	uint32_t    aqa;
-	uint64_t    asq;
-	uint64_t    acq;
-	uint32_t    cmbloc;
-	uint32_t    cmbsz;
+	uint32_t    aqa;			/* Admin Queue Attributes */
+	uint64_t    asq;			/* Admin SQ Base Address */ 
+	uint64_t    acq;			/* Admin CQ Base Address */
+	uint32_t    cmbloc;			/* Controller Memory Buffer Location */
+	uint32_t    cmbsz;			/* CMB Size */
 } NvmeBar;
 
 enum NvmeCapShift {
@@ -1197,7 +1197,7 @@ typedef struct NvmeSQueue {
 	uint16_t    cqid;
 	uint32_t    head;
 	uint32_t    tail;
-	uint32_t    size;
+	uint32_t    size;			// 32
 	uint64_t    dma_addr;
 	uint64_t    dma_addr_hva;
 	uint64_t    completed;
@@ -1223,7 +1223,7 @@ typedef struct NvmeCQueue {
 	uint32_t    head;
 	uint32_t    tail;
 	uint32_t    vector;
-	uint32_t    size;
+	uint32_t    size;			// 32
 	uint64_t    dma_addr;
 	uint64_t    dma_addr_hva;
 	uint64_t    *prp_list;
@@ -1523,16 +1523,16 @@ typedef struct FemuCtrl {
 
 	time_t      start_time;
 	uint16_t    temperature;
-	uint16_t    page_size;
-	uint16_t    page_bits;
-	uint16_t    max_prp_ents;
-	uint16_t    cqe_size;
-	uint16_t    sqe_size;
+	uint16_t    page_size;			// 4096
+	uint16_t    page_bits;			// 12
+	uint16_t    max_prp_ents;		// 512
+	uint16_t    cqe_size;			// 16
+	uint16_t    sqe_size;			// 64
 	uint16_t    oacs;
 	uint16_t    oncs;
-	uint32_t    reg_size;
+	uint32_t    reg_size;			/* 8192 */
 	uint32_t    num_namespaces;
-	uint32_t    nr_io_queues;
+	uint32_t    nr_io_queues;		// 8
 	uint32_t    max_q_ents;
 	uint64_t    ns_size;
 	uint8_t     db_stride;
@@ -1631,7 +1631,14 @@ typedef struct FemuCtrl {
 	int             completed;
 
 	char            devname[64];
-	struct rte_ring **to_ftl;
+	/* 
+	 * <to_ftl[1]>
+	 * struct rte_ring {
+	 * 	flags:	2;
+	 * 	size:	65536;
+	 * 	...
+	 * } */
+	struct rte_ring **to_ftl;					// rte_ring * 9
 	struct rte_ring **to_poller;
 	pqueue_t        **pq;
 	bool            *should_isr;
@@ -1641,8 +1648,8 @@ typedef struct FemuCtrl {
 	int64_t         nr_tt_late_ios;
 	bool            print_log;
 
-	uint8_t         multipoller_enabled;
-	uint32_t        nr_pollers;
+	uint8_t         multipoller_enabled;		// false
+	uint32_t        nr_pollers;					// 1
 
 	/* Nand Flash Type: SLC/MLC/TLC/QLC/PLC */
 	uint8_t         flash_type;

@@ -249,8 +249,10 @@ static void nvme_mmio_write(void *opaque, hwaddr addr, uint64_t data, unsigned s
     if (addr < sizeof(n->bar)) {
         nvme_write_bar(n, addr, data, size);
     } else if (addr >= 0x1000 && addr < 0x1008) {
+		/* admin SQ/CQ */
         nvme_process_db_admin(n, addr, data);
     } else {
+		/* IO SQ/CQ doorbell */
         nvme_process_db_io(n, addr, data);
     }
 }
@@ -681,6 +683,7 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
         return;
     }
 
+	/* simualted SSD size: memsz(MB) */
     bs_size = ((int64_t)n->memsz) * 1024 * 1024;
 
     init_dram_backend(&n->mbe, bs_size);

@@ -999,7 +999,6 @@ static int do_gc(struct ssd *ssd, bool force)
 	}
 
 	// FIXME: 
-	// Mixed RUH mode : ii_idx is not sure !
 	// ruht == 1 (INITIALLY_ISOLATED)
 	// ruht == 2 (PERSISTENTLY_ISOLATED)
 	int dest_ruhid = 0;
@@ -1114,7 +1113,6 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 			}
 		}
 		// use for Filebech workload 
-		// ph = (rr_ph++) % spp->nruh; 
 		ph = wl_select_ruh(ssd);
 		rg = 0;
 	}

@@ -244,6 +244,9 @@ uint16_t nvme_init_cq(NvmeCQueue *cq, FemuCtrl *n, uint64_t dma_addr, uint16_t
     AddressSpace *as = pci_get_address_space(&n->parent_obj);
     dma_addr_t cqsz = (dma_addr_t)size;
 
+	/* 
+	 * cq->dma_addr 	: Guest Physical Address 
+	 * cq->dma_addr_hva	: Host Virtual Address    */ 
     if (cq->phys_contig) {
         cq->dma_addr = dma_addr;
         cq->dma_addr_hva = (uint64_t)dma_memory_map(as, dma_addr, &cqsz, 1, MEMTXATTRS_UNSPECIFIED);
