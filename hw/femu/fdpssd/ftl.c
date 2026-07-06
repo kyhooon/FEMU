@@ -1068,7 +1068,7 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 		maxlat = (curlat > maxlat) ? curlat : maxlat;
 
 		/* lpnCount */
-		ssd->lpnCount[start_lpn] += 1;
+		ssd->lpnCount[lpn] += 1;
 
 		/* hostWrite */
 		ssd->hostWrite += 1;
