@@ -590,71 +590,136 @@ static void ssd_init_workload_stats(struct ssd *ssd)
 	wl->last_lpn_valid	= false;
 	wl->ii_rr			= 0;
 	wl->pi_rr			= 0;
+	wl->hot_writes		= 0;
+	wl->cold_writes		= 0;
+	wl->window_writes	= 0;
+	wl->last_is_overwrite = false;
 }
 
 /* 
- * Policy A : Static Half
- * Policy B : Workload-Aware */
-static void wl_update_stats(struct ssd *ssd, uint64_t start_lpn, 
-												uint64_t end_lpn)
+ * Update per-write workload characterization stats.
+ *
+ * Called once per ssd_write() before wl_select_ruh().
+ * Sets wl->last_is_sequential and wl->last_is_overwrite for immediate use by 
+ * wl_select_ruh(), and maintains sliding-window counters that drive the 
+ * global workload classification (seq_pct, hot_pct)
+ */
+static void wl_update_stats(struct ssd *ssd, uint64_t start_lpn,
+								uint64_t end_lpn)
 {
 	struct workload_stats *wl = &ssd->wl_stats;
 	bool is_sequential;
+	bool is_overwrite;
 
 	is_sequential = wl->last_lpn_valid &&
 		(start_lpn == wl->last_write_lpn + 1 ||
 		 start_lpn == wl->last_write_lpn);
 
+	/* overwrite: the first LPN of the request already has a live mapping */
+	is_overwrite = (ssd->lpnCount[start_lpn] > 0);
+
 	wl->last_is_sequential = is_sequential;
+	wl->last_is_overwrite  = is_overwrite;
 
 	if (is_sequential)
 		wl->seq_writes++;
 	else
 		wl->rand_writes++;
+
+	if (is_overwrite) {
+		wl->hot_writes++;
+		wl->overwrite_cnt++;
+	} else {
+		wl->cold_writes++;
+	}
+
 	wl->total_writes++;
+	wl->window_writes++;
 	wl->last_write_lpn = end_lpn;
 	wl->last_lpn_valid = true;
 
-	if (ssd->lpnCount[start_lpn] > 0)
-		wl->overwrite_cnt++;
+	/* Sliding window: reset counters periodically so the policy adapts to
+	 * workload phase changes without being anchored to early behavior. */
+	if (wl->window_writes >= WL_WINDOW_SIZE) {
+		wl->seq_writes    = 0;
+		wl->rand_writes   = 0;
+		wl->total_writes  = 0;
+		wl->hot_writes    = 0;
+		wl->cold_writes   = 0;
+		wl->window_writes = 0;
+	}
 }
 
-/* Select which RUH to use when the host did not supply an explicit PID */
+/*
+ * Helper macros: pick one RUH from the II subset (indices 0..ii_cnt-1) or
+ * the PI subset (indices ii_cnt..nruh-1) using the per-subset round-robin
+ * counter.  Fall back to the other subset when the preferred one is empty.
+ */
+#define SELECT_II(wl, ii_cnt, pi_cnt, nruh) \
+	((ii_cnt) > 0 ? (uint16_t)((wl)->ii_rr++ % (ii_cnt)) \
+				  : (uint16_t)((ii_cnt) + (wl)->pi_rr++ % (nruh)))
+
+#define SELECT_PI(wl, ii_cnt, pi_cnt, nruh) \
+	((pi_cnt) > 0 ? (uint16_t)((ii_cnt) + (wl)->pi_rr++ % (pi_cnt)) \
+				  : (uint16_t)((wl)->ii_rr++ % (nruh)))
+
+/*
+ * Select which RUH to use: called when host supplied no valid PID,
+ * or when FDP_POLICY_WORKLOAD_AWARE overrides the host PID entirely.
+ *
+ * FDP_POLICY_WORKLOAD_AWARE decision hierarchy (after warm-up):
+ *   1. Hot workload (overwrite% >= WL_HOT_THRESHOLD_PCT):
+ *        current write is overwrite → II  (hot data invalidates fast; efficient GC)
+ *        current write is new data  → PI  (cold data isolated; avoids GC disturbance)
+ *   2. Sequential-dominant (seq% >= WL_SEQ_THRESHOLD_PCT) → II
+ *   3. Random-dominant     (seq% <= WL_RAND_THRESHOLD_PCT) → PI
+ *   4. Mixed zone (30% < seq% < 70%): per-request signal
+ *        overwrite or sequential → II
+ *        otherwise               → PI
+ *      (Replaces the previous broken "total_writes % nruh" dead zone.)
+ */
 static uint16_t wl_select_ruh(struct ssd *ssd)
 {
 	struct ssdparams *spp = &ssd->sp;
 	struct workload_stats *wl = &ssd->wl_stats;
 	int ii_cnt = spp->ii_ruh_cnt;
 	int pi_cnt = spp->nruh - ii_cnt;
-
-	bool is_sequential = wl->last_is_sequential;
+	int nruh   = spp->nruh;
 
 	if (spp->ruh_placement_policy == FDP_POLICY_WORKLOAD_AWARE &&
 			wl->total_writes >= 1000) {
 		uint64_t seq_pct = wl->seq_writes * 100 / wl->total_writes;
+		uint64_t hot_pct = wl->hot_writes  * 100 / wl->total_writes;
 
-		if (seq_pct >= WL_SEQ_THRESHOLD_PCT) {
-			if (ii_cnt > 0)
-				return (uint16_t)(wl->ii_rr++ % ii_cnt);
-			return (uint16_t)(wl->pi_rr++ % spp->nruh);
+		/* Level 1: hot workload — separate overwrite (hot) from new data (cold) */
+		if (hot_pct >= WL_HOT_THRESHOLD_PCT) {
+			if (wl->last_is_overwrite)
+				return SELECT_II(wl, ii_cnt, pi_cnt, nruh);
+			return SELECT_PI(wl, ii_cnt, pi_cnt, nruh);
 		}
-		if (seq_pct <= WL_RAND_THRESHOLD_PCT) {
-			if (pi_cnt > 0)
-				return (uint16_t)(ii_cnt + wl->pi_rr++ % pi_cnt);
-			return (uint16_t)(wl->ii_rr++ % spp->nruh);
-		}
-		return (uint16_t)(wl->total_writes % spp->nruh);
+
+		/* Level 2: sequential-dominant → II */
+		if (seq_pct >= WL_SEQ_THRESHOLD_PCT)
+			return SELECT_II(wl, ii_cnt, pi_cnt, nruh);
+
+		/* Level 3: random-dominant → PI */
+		if (seq_pct <= WL_RAND_THRESHOLD_PCT)
+			return SELECT_PI(wl, ii_cnt, pi_cnt, nruh);
+
+		/* Level 4: mixed zone — per-request signal (dead-zone fix) */
+		if (wl->last_is_overwrite || wl->last_is_sequential)
+			return SELECT_II(wl, ii_cnt, pi_cnt, nruh);
+		return SELECT_PI(wl, ii_cnt, pi_cnt, nruh);
 	}
 
-	if (is_sequential) {
-		if (ii_cnt > 0)
-			return (uint16_t)(wl->ii_rr++ % ii_cnt);
-		return (uint16_t)(wl->pi_rr++ % spp->nruh);
-	}
-	if (pi_cnt > 0)
-		return (uint16_t)(ii_cnt + wl->pi_rr++ % pi_cnt);
-	return (uint16_t)(wl->ii_rr++ % spp->nruh);
-} 
+	/* Warm-up / non-workload-aware policies: per-request sequential/random */
+	if (wl->last_is_sequential)
+		return SELECT_II(wl, ii_cnt, pi_cnt, nruh);
+	return SELECT_PI(wl, ii_cnt, pi_cnt, nruh);
+}
+
+#undef SELECT_II
+#undef SELECT_PI
 
 static void ssd_init_lpn_tracking(struct ssd *ssd) 
 {
@@ -1100,9 +1165,13 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 
 	wl_update_stats(ssd, start_lpn, end_lpn);
 
-	if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT || !nvme_parse_pid(ns, pid, &ph, &rg)) {
+	if (spp->ruh_placement_policy == FDP_POLICY_WORKLOAD_AWARE) {
+		/* SSD-internal placement: ignore host PID entirely */
+		ph = wl_select_ruh(ssd);
+		rg = 0;
+	} else if (dtype != NVME_DIRECTIVE_DATA_PLACEMENT || !nvme_parse_pid(ns, pid, &ph, &rg)) {
 		if (dtype == NVME_DIRECTIVE_DATA_PLACEMENT) {
-			// Invalid Placement Identifier 
+			// Invalid Placement Identifier
 			NvmeRuHandle *ruh = &ssd->ruhs[0];
 			if (ruh->event_filter >> nvme_fdp_evf_shifts[FDP_EVT_INVALID_PID] & 0x1) {
 				NvmeFdpEvent *e = ftl_fdp_alloc_event(ssd, &endgrp->fdp.host_events);
@@ -1112,7 +1181,6 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 				e->nsid = cpu_to_le32(ns->id);
 			}
 		}
-		// use for Filebech workload 
 		ph = wl_select_ruh(ssd);
 		rg = 0;
 	}
@@ -1173,8 +1241,8 @@ static uint64_t ssd_write(FemuCtrl *n, NvmeRequest *req)
 		curlat = ssd_advance_status(ssd, &ppa, &swr);
 		maxlat = (curlat > maxlat) ? curlat : maxlat;
 
-		/* lpnCount */
-		ssd->lpnCount[start_lpn] += 1;
+		/* lpnCount: track per-LPN write count for hot/cold detection */
+		ssd->lpnCount[lpn] += 1;
 
 		/* hostWrite */
 		ssd->hostWrite += 1;
@@ -1255,13 +1323,11 @@ static void *ftl_thread(void *arg)
 	}
 	fprintf(WAFData, "time(s), hostWrite, GCWrite, WAF\n");
 
-	// FIXME
 	/* per_ruh_WAF */
 	ruhstat = fopen("/home/cpslab/ruhstat.csv", "w");
 	if (ruhstat == NULL) {
 		ftl_err("Failed to open ruhstat.csv\n");
 	}
-	fprintf(ruhstat, "ruhid, hostwrite, GCWrite, WAF\n");
 
 	while (!*(ssd->dataplane_started_ptr)) {
 		usleep(100000);
@@ -1324,9 +1390,14 @@ static void *ftl_thread(void *arg)
 				fflush(WAFData);
 
 				struct workload_stats *wl = &ssd->wl_stats;
-				uint64_t seq_pct = wl->total_writes > 0 
+				uint64_t seq_pct = wl->total_writes > 0
 								? wl->seq_writes * 100 / wl->total_writes : 0;
-				femu_log("wl: seq=%lu rand=%lu overwrite=%lu seq_pct=%lu policy=%d\n", wl->seq_writes, wl->rand_writes, wl->overwrite_cnt, seq_pct, spp->ruh_placement_policy);
+				uint64_t hot_pct = wl->total_writes > 0
+								? wl->hot_writes  * 100 / wl->total_writes : 0;
+				femu_log("wl: seq=%lu rand=%lu hot=%lu cold=%lu seq_pct=%lu hot_pct=%lu policy=%d\n",
+						wl->seq_writes, wl->rand_writes,
+						wl->hot_writes, wl->cold_writes,
+						seq_pct, hot_pct, spp->ruh_placement_policy);
 
 				start_time = current_time;
 			}

@@ -8,6 +8,11 @@
 #define WL_SEQ_THRESHOLD_PCT	70
 #define WL_RAND_THRESHOLD_PCT	30
 
+/* Sliding window size: reset workload stats every N writes for adaptability */
+#define WL_WINDOW_SIZE			10000
+/* If overwrite% of writes in the window exceeds this, treat as hot workload */
+#define WL_HOT_THRESHOLD_PCT	20
+
 enum {
 	FDP_POLICY_STATIC_HALF		= 0,
 	FDP_POLICY_RATIO_SPLIT		= 1,
@@ -241,6 +246,12 @@ struct workload_stats {
 	/* Result of the most recent sequential-detection check
 	 * wl_update_stats() and wl_select_ruh() */
 	bool last_is_sequential;
+
+	/* Hot/cold classification (per-request, set by wl_update_stats) */
+	uint64_t hot_writes;		/* writes that overwrote an existing LPN mapping */
+	uint64_t cold_writes;		/* writes to LPNs with no prior mapping */
+	uint64_t window_writes;		/* write count within current sliding window */
+	bool     last_is_overwrite;	/* true if the last write hit a live LPN */
 };
 
 struct ssd {
